@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model users {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  username       String?
+  auth_provider  String   @default("email")
+  google_id      String?
+  email_verified Boolean  @default(false)
+  referral_code  String   @unique
+  referred_by    String?
+  created_at     DateTime @default(now())
+}
+
+model user_tokens {
+  id                 String @id @default(uuid())
+  user_id            String @unique
+  balance            Int    @default(0)
+  lifetime_purchased Int    @default(0)
+  lifetime_spent     Int    @default(0)
+}
+
+model token_bundles {
+  id              String   @id @default(uuid())
+  name            String
+  tokens          Int
+  base_price      Decimal  @db.Decimal(6,2)
+  current_price   Decimal  @db.Decimal(6,2)
+  stripe_price_id String
+  is_most_popular Boolean  @default(false)
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+}
+
+model purchases {
+  id                String   @id @default(uuid())
+  user_id           String
+  stripe_payment_id String
+  bundle_id         String
+  tokens_purchased  Int
+  amount_paid_cents Int
+  created_at        DateTime @default(now())
+}
+
+model referrals {
+  id          String    @id @default(uuid())
+  referrer_id String
+  referred_id String    @unique
+  status      String    @default("pending")
+  created_at  DateTime  @default(now())
+  claimed_at  DateTime?
+  expires_at  DateTime
+}
+
+model judge_cache {
+  id             String   @id @default(uuid())
+  game_id        String
+  input_text     String
+  survey_id      String
+  matched_answer String?
+  is_match       Boolean
+  created_at     DateTime @default(now())
+
+  @@unique([game_id, input_text, survey_id])
+}
+
+model feedback {
+  id         String   @id @default(uuid())
+  user_id    String?
+  game_id    String?
+  category   String
+  message    String
+  created_at DateTime @default(now())
+}
+
+model game_sessions {
+  id        String   @id @default(uuid())
+  user_id   String
+  game_id   String
+  completed Boolean  @default(false)
+  timestamp DateTime @default(now())
+  metadata  Json?
+}
+
+model survey_packs {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  is_free     Boolean  @default(false)
+  is_active   Boolean  @default(true)
+  rounds      Json
+  created_at  DateTime @default(now())
+}
+
+model custom_surveys {
+  id            String   @id @default(uuid())
+  user_id       String
+  name          String
+  collection_id String?
+  questions     Json
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+}
+
+model custom_survey_collections {
+  id         String   @id @default(uuid())
+  user_id    String
+  name       String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}
+
+model survey_showdown_sessions {
+  id         String @id @default(uuid())
+  session_id String @unique
+  team1      String
+  team2      String
+  rounds     Int
+  pack       String
+  winner     String
+  score1     Int
+  score2     Int
+}
