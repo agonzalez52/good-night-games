@@ -9,15 +9,16 @@ datasource db {
 }
 
 model users {
-  id             String   @id @default(uuid())
-  email          String   @unique
-  username       String?
-  auth_provider  String   @default("email")
-  google_id      String?
-  email_verified Boolean  @default(false)
-  referral_code  String   @unique
-  referred_by    String?
-  created_at     DateTime @default(now())
+  id                     String   @id @default(uuid())
+  email                  String   @unique
+  username               String?
+  auth_provider          String   @default("email")
+  google_id              String?
+  email_verified         Boolean  @default(false)
+  referral_code          String   @unique
+  referred_by            String?
+  signup_tokens_credited Boolean  @default(false)
+  created_at             DateTime @default(now())
 }
 
 model user_tokens {

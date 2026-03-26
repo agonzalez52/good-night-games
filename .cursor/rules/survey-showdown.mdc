@@ -1,0 +1,330 @@
+---
+description: Updating/Creating files/directories, adding new features
+alwaysApply: false
+---
+## Tech Stack
+
+| Layer       | Tool                                       |
+|-------------|--------------------------------------------|
+| Language    | TypeScript                                 |
+| Frontend    | Next.js 14 (App Router), React, Tailwind   |
+| Backend     | Hono, Node.js                              |
+| Database    | Supabase PostgreSQL                        |
+| Auth        | Supabase Auth (email/password, Google, magic link) |
+| ORM         | Prisma + Accelerate                        |
+| Validation  | Zod                                        |
+| Payments    | Stripe                                     |
+| AI Judge    | Claude Haiku (backend only — never frontend) |
+| Hosting     | Railway                                    |
+| Testing     | Vitest                                     |
+| CI          | GitHub Actions                             |
+
+---
+
+## Repository Structure
+The project lives in a single GitHub repository named good-night-games. Both the frontend and backend are subdirectories within it. This keeps all Good Night Games code in one place, allows shared TypeScript types between frontend and backend, and means one CI pipeline covers both sides.
+```
+good-night-games/                  ← GitHub repo root
+├── frontend/                      ← Next.js app
+├── backend/                       ← Hono API server
+├── shared/                        ← TypeScript types shared by both sides (optional, add when needed)
+├── .github/
+│   └── workflows/
+│       └── ci.yml                 ← single CI file covering frontend and backend
+└── README.md
+```
+Each subdirectory has its own package.json and dependencies installed independently. There is no root-level package.json — run npm install inside frontend/ or backend/ as needed. Railway is configured with its Root Directory set to backend/ so it treats that folder as if it were a standalone repo.
+
+---
+
+## Design System
+
+### Color Tokens (CSS variables — never hardcode these values)
+
+```
+--bg: #060914
+--surface: rgba(255,255,255,0.035)
+--surface-2: rgba(255,255,255,0.06)
+--border: rgba(255,255,255,0.075)
+--border-2: rgba(255,255,255,0.13)
+--blue: #4D7EFF
+--blue-dim: rgba(77,126,255,0.18)
+--blue-glow: rgba(77,126,255,0.35)
+--gold: #F0A500
+--gold-mid: #C07A00
+--gold-dim: rgba(240,165,0,0.14)
+--gold-glow: rgba(240,165,0,0.35)
+--green: #0FD98A
+--green-dim: rgba(15,217,138,0.14)
+--green-glow: rgba(15,217,138,0.3)
+--red: #FF4D6A
+--red-dim: rgba(255,77,106,0.14)
+--red-glow: rgba(255,77,106,0.3)
+--purple: #9B6DFF
+--text: #EEF2FF
+--text-muted: #A0B4CC
+--text-faint: #6677AA
+```
+
+### Typography
+
+- `--font-display: 'Russo One', sans-serif` — headings, labels, scores, buttons
+- `--font-score: 'Bebas Neue', sans-serif` — numeric scores, timer, points
+- `--font-body: 'DM Sans', sans-serif` — body copy, inputs, descriptions
+- These are the ONLY fonts used in this project. Never suggest Inter, Roboto, system fonts, or any other typeface.
+
+### Border Radius
+
+- `--radius-sm: 8px`
+- `--radius: 14px`
+- `--radius-lg: 20px`
+
+### Animation Palette
+
+Named animations already defined in GLOBAL_CSS. Reuse these; do not invent new ones
+unless there is a clear gap:
+
+xPop, pulse, slideUp, slideDown, fadeIn, glow, blueGlow, timerPulse, menuSlide,
+tileReveal, shimmer, scoreUp, borderPulse, staggerIn, logoIn, float, redPulse,
+greenPulse, coinFly, tokenPop
+
+### TokenSVG Component
+
+ALWAYS use `<TokenSVG size={n}/>` instead of any coin emoji (🪙) or token text.
+Sizes in use: 13, 14, 15, 16, 18, 20, 22, 48px.
+The SVG uses radialGradient id="tokenFill" — do not duplicate this id.
+
+---
+
+## Game Architecture
+
+### Screens
+
+The app has three screens controlled by a `screen` state variable:
+- `"setup"` → SetupScreen
+- `"faceoff"` → FaceOffScreen
+- `"board"` → BoardScreen
+
+### Game Flow (critical — understand before touching game logic)
+
+```
+startGame(t1, t2, secs, nr)
+  ├── FREE PACK + any user     → commitGame(..., false)   [no tokens spent]
+  ├── PREMIUM PACK + signed out → show ConversionModal
+  ├── PREMIUM PACK + signed in  → setPendingGame(...)
+  │     └── SpendConfirmModal confirms → commitGame(..., true)
+  └── PREMIUM PACK + insufficient balance → show SpendConfirmModal (buy-more state)
+
+commitGame(t1, t2, secs, nr, usedTokens)
+  ├── Deducts TOKENS_PER_GAME (2) if usedTokens === true
+  ├── Sets isTokenGame flag (suppresses ads for this game)
+  ├── Shuffles pack rounds
+  └── setScreen("faceoff")
+```
+
+Never bypass `startGame`. Never deduct tokens outside of `commitGame`.
+Always pass `usedTokens` as a boolean — never undefined.
+
+### Token Rules
+
+- `TOKENS_PER_GAME = 2`
+- Free packs (Classic) NEVER cost tokens, even for signed-in users
+- Premium packs and Random Mix cost 2 tokens
+- The `isTokenGame` flag suppresses ads between rounds and at game over
+- Token balance lives on `currentUser.tokenBalance` — always update via `onTokensUpdated`
+- Never mutate token balance directly in child components
+
+### currentUser Shape
+
+```ts
+{
+  id: string
+  email: string
+  username: string
+  tokenBalance: number
+  emailVerified: boolean
+  referralsClaimed: number  // 0–3
+}
+```
+
+---
+
+## API Conventions
+
+### Namespace rules
+
+- Product-level (shared across all GNG games): `/api/auth/`, `/api/tokens/`, `/api/referrals/`, `/api/feedback`
+- Game-specific: `/api/survey-showdown/`
+- Future games: `/api/word-blitz/`, `/api/trivia-rush/`, etc.
+- NEVER put game-specific logic in product-level routes
+
+### Auth
+
+- All protected endpoints require a valid Supabase JWT in the Authorization header
+- Validate server-side using Supabase service role key — never trust client-supplied user IDs
+- RLS is enabled: users only see their own surveys, history, tokens
+
+### Key endpoint behaviors
+
+- `POST /api/tokens/spend` — validates balance server-side before deducting; rejects if insufficient
+- `POST /api/survey-showdown/judge` — checks judge_cache first; calls Claude Haiku on miss; never exposes Anthropic key to frontend
+- `POST /api/survey-showdown/history` — requires `game_id: "survey_showdown"` in request body; enforces 50-record rolling window
+- `POST /api/feedback` — requires `game_id` for per-game dashboard filtering
+- `DELETE /api/survey-showdown/surveys/collections/:id` — deletes collection only, not its surveys (surveys become uncategorized)
+
+### Zod validation
+
+Every endpoint validates its request body and query params with Zod before any
+business logic. Return 400 with a structured error object on validation failure.
+
+---
+
+## Database Conventions
+
+### Naming
+
+- Shared tables: `users`, `tokens`, `bundles`, `purchases`, `referrals`, `feedback`, `game_sessions`, `judge_cache`
+- Game-specific tables: prefixed with game name — `survey_packs`, `surveys`, `survey_collections`, `survey_showdown_results`
+- All new game tables must follow the same prefix convention
+
+### game_sessions table
+
+`game_id` column identifies which game the session belongs to. Survey Showdown
+always writes `game_id = "survey_showdown"`. Never query game_sessions without
+filtering by game_id unless you intentionally want cross-game data.
+
+### Migrations
+
+- Always use `prisma migrate dev --name <descriptive-name>` for new migrations
+- Never edit migration files after they've been applied
+- Staging and local share the same Supabase project — run migrations once to cover both
+
+---
+
+## Frontend Component Conventions
+
+### Modal pattern
+
+All modals:
+- Fixed inset-0 overlay with `background: rgba(0,0,0,0.88)` and `backdropFilter: blur(8px)`
+- Click-outside closes modal: `onClick={e => { if (e.target === e.currentTarget) onClose(); }}`
+- Entry animation: `animation: slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)`
+- Max width with responsive clamp: `width: "min(Npx, 92vw)"`
+- Close button: 34×34px, top-right, `borderRadius: 8px`
+- Gold (`#F0A500`) for primary CTAs; blue (`#4D7EFF`) for secondary/info CTAs
+
+### Button states
+
+- Disabled: `opacity: 0.38`
+- Hover: `filter: brightness(1.1); transform: translateY(-1px)`
+- Active: `filter: brightness(0.92); transform: scale(0.97)`
+- All buttons use `font-family: var(--font-display)`
+
+### Input focus style
+
+```
+borderColor: "rgba(77,126,255,0.5)"
+boxShadow: "0 0 0 3px rgba(77,126,255,0.1)"
+```
+
+### Section labels / eyebrow text
+
+```
+fontFamily: "var(--font-display)"
+fontSize: 9–10px
+letterSpacing: "0.16–0.22em"
+color: "var(--text-faint)"
+textTransform: "uppercase"
+```
+
+---
+
+## Environment & Mock Mode
+
+### Three environments
+
+| Environment | Supabase Project            | Stripe Keys  |
+|-------------|----------------------------|--------------|
+| Local       | good-night-games-staging   | sk_test_...  |
+| Staging     | good-night-games-staging   | sk_test_...  |
+| Production  | good-night-games-production | sk_live_... |
+
+### NEXT_PUBLIC_MOCK_MODE
+
+Mock/simulate buttons MUST be gated:
+
+```tsx
+const isMockMode = process.env.NEXT_PUBLIC_MOCK_MODE === 'true';
+{isMockMode && <button onClick={handleSimulate}>🧪 Simulate...</button>}
+```
+
+Present in `.env.local` and Railway staging. Intentionally absent from Railway
+production — Next.js compiles these branches out at build time.
+
+Mock elements that must be gated (complete list):
+- "🧪 SIMULATE EMAIL LINK CLICK" (AuthModal — verify state)
+- "🧪 SIMULATE EMAIL LINK CLICK" (AuthModal — magic-sent state)
+- "🧪 Simulate a friend claiming their tokens" (ReferralModal)
+- "MOCK VERIFY" (VerificationBanner)
+
+---
+
+## Content & Legal Rules
+
+### Survey content
+
+- All survey questions and answers are 100% original
+- NEVER use questions, answers, or question formats from Family Feud, survey databases,
+  or any third-party content
+- Avoid questions that could be interpreted as based on real proprietary survey data
+- No references to specific brands, celebrities, or trademarked properties in survey content
+
+### Game mechanics
+
+- The core mechanic is inspired by the public domain "survey game" format — do not
+  use the name "Family Feud", any Fremantle/CBS branding, or any associated trade dress
+- The name "Survey Showdown" and "Good Night Games" are original — preserve them
+
+### User data
+
+- Never log personally identifiable information (PII) to console in any environment
+- Never expose service role keys, stripe secret keys, or Anthropic API keys to the client
+- User emails are only shown in UI elements the owner can see (account dropdown, verify banner)
+- Referral simulate buttons are dev-only — see mock mode section above
+
+---
+
+## Phase Awareness
+
+The project follows a phased implementation plan. Always be aware of the current
+phase before suggesting changes:
+
+| Phase | Status | Deliverable |
+|-------|--------|-------------|
+| 1–3   | ✅ Done | Full frontend UI in SurveyShowdown.jsx |
+| 4     | ⬜ Next | Backend scaffold + Prisma schema |
+| 5     | ⬜      | All API endpoints |
+| 6     | ⬜      | Next.js scaffold + real Supabase auth |
+| 7     | ⬜      | Stripe integration |
+| 8     | ⬜      | AI judge on backend |
+| 9     | ⬜      | Referrals, feedback, history wired |
+| 10    | ⬜      | Production deploy on Railway |
+
+**Do not suggest Phase 6+ integrations (real Supabase calls, Stripe, backend fetches)
+while the project is still in Phases 4–5.** Mock data and TODO comments are correct
+and intentional in the frontend until Phase 6.
+
+---
+
+## Common Mistakes to Avoid
+
+1. **Using emoji coins** — always use `<TokenSVG size={n}/>`, never 🪙
+2. **Bypassing startGame** — never call commitGame directly from UI events
+3. **Mutating tokens in child components** — always call `onTokensUpdated` up the tree
+4. **Inline colors** — always use CSS variables for design system colors
+5. **Wrong fonts** — only Russo One, Bebas Neue, and DM Sans
+6. **Mock buttons without NEXT_PUBLIC_MOCK_MODE guard** — all simulate/mock buttons must be gated
+7. **Missing game_id** — every history write and judge cache entry requires game_id
+8. **Querying surveys without RLS** — always filter by user_id; never return other users' surveys
+9. **Deleting collection with surveys** — collections delete independently; surveys become uncategorized
+10. **Adding IP-adjacent survey content** — all content must be wholly original
