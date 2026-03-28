@@ -50,4 +50,52 @@ auth.post('/verify-email', requireAuth, async (c) => {
   }
 })
 
+// GET /api/auth/me — returns the public.users row for the authenticated user
+auth.get('/me', requireAuth, async (c) => {
+  const userId = c.get('userId') // set by requireAuth middleware
+  
+  const user = await prisma.users.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      email: true,
+      username: true,
+      email_verified: true,
+      referral_code: true,
+    }
+  })
+  
+  if (!user) return c.json({ error: 'User not found' }, 404)
+  
+  // Count claimed referrals for this user
+  const referralsClaimed = await prisma.referrals.count({
+    where: { referrer_id: userId, status: 'claimed' }
+  })
+  
+  return c.json({
+    id: user.id,
+    email: user.email,
+    username: user.username,
+    email_verified: user.email_verified,
+    referral_code: user.referral_code,
+    referrals_claimed: referralsClaimed,
+  })
+})
+
+/** Cloudflare Turnstile siteverify JSON body (subset). */
+type TurnstileSiteverifyBody = { success?: boolean }
+
+async function verifyTurnstile(token: string): Promise<boolean> {
+  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      secret: process.env.TURNSTILE_SECRET_KEY,
+      response: token,
+    }),
+  })
+  const data = (await res.json()) as TurnstileSiteverifyBody
+  return data.success === true
+}
+
 export default auth
