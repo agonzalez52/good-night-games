@@ -17,8 +17,10 @@ export const TOKEN_BUNDLES = [
 ];
 
 // ─── SURVEY PACKS ─────────────────────────────────────────────────────────────
-// Phase 6: replace static arrays with GET /api/survey-showdown/packs
-// Pack: { id, name, description, rounds: Round[] }
+// Phase 6: replace static arrays with GET /api/survey-showdown/packs (see
+// frontend/src/lib/api/survey-showdown/packs.ts for response types).
+// In-app Pack: { id, name, description, rounds: Round[] }
+// API list: free items include rounds plus is_free, is_active, created_at; premium items omit rounds until GET .../packs/:id/rounds.
 // Round: { question: string, answers: { text: string, points: number }[] }
 // All content is original and free of any IP, trademark, or copyright concerns.
 

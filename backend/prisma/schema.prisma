@@ -98,8 +98,31 @@ model survey_packs {
   description String
   is_free     Boolean  @default(false)
   is_active   Boolean  @default(true)
-  rounds      Json
   created_at  DateTime @default(now())
+  questions   survey_questions[]
+}
+
+model survey_questions {
+  id            String           @id @default(uuid())
+  pack_id       String
+  question      String
+  display_order Int
+  created_at    DateTime         @default(now())
+  pack          survey_packs     @relation(fields: [pack_id], references: [id], onDelete: Cascade) // lets Prisma navigate from a question to its parent pack
+  answers       survey_answers[] // lets Prisma fetch a question’s child answers
+
+  @@index([pack_id, display_order])
+}
+
+model survey_answers {
+  id            String           @id @default(uuid())
+  question_id   String
+  text          String
+  points        Int
+  display_order Int
+  question      survey_questions @relation(fields: [question_id], references: [id], onDelete: Cascade)
+
+  @@index([question_id, display_order])
 }
 
 model custom_surveys {
