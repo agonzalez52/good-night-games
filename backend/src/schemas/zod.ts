@@ -14,7 +14,7 @@ export const createSurveySchema = z.object({
   questions: z.array(z.object({
     question: z.string().min(1),
     answers: z.array(z.object({
-      text: z.string().min(1),
+      answer: z.string().min(1),
       points: z.number().int().min(1).max(100),
     })).min(2).max(8),
   })).min(1),
@@ -28,7 +28,7 @@ export const judgeSchema = z.object({
   input: z.string().min(1).max(200),
   surveyId: z.string(),
   answers: z.array(z.object({
-    text: z.string(),
+    answer: z.string(),
     points: z.number(),
   })),
 })

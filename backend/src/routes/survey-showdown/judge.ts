@@ -42,7 +42,7 @@ judge.post(
 
       // Cache miss — call Haiku
       const candidateList = answers
-        .map((a, i) => `${i}: "${a.text}"`)
+        .map((a, i) => `${i}: "${a.answer}"`)
         .join('\n')
 
       const prompt = `You are judging a Survey Showdown game. The player answered: "${input}"
@@ -66,7 +66,7 @@ Reply with ONLY the number of the matching answer index, or "none" if there is n
 
       const isMatch = reply !== 'none' && reply !== '' && !isNaN(parseInt(reply))
       const matchedIndex = isMatch ? parseInt(reply) : null
-      const matchedAnswer = matchedIndex !== null ? (answers[matchedIndex]?.text ?? null) : null
+      const matchedAnswer = matchedIndex !== null ? (answers[matchedIndex]?.answer ?? null) : null
 
       // Store in cache
       await prisma.judge_cache.create({

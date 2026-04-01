@@ -1,7 +1,7 @@
 ---
-alwaysApply: true
+description: Apply when dealing with Supabase Declarative Schema Management
+alwaysApply: false
 ---
-
 # Database: Declarative Database Schema
 
 Mandatory Instructions for Supabase Declarative Schema Management

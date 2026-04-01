@@ -1,11 +1,12 @@
 ---
 description: Updating/Creating files/directories, adding new features
-alwaysApply: false
+alwaysApply: true
 ---
+
 ## Tech Stack
 
 | Layer       | Tool                                       |
-|-------------|--------------------------------------------|
+|----|-----|
 | Language    | TypeScript                                 |
 | Frontend    | Next.js 14 (App Router), React, Tailwind   |
 | Backend     | Hono, Node.js                              |
@@ -244,7 +245,7 @@ textTransform: "uppercase"
 ### Three environments
 
 | Environment | Supabase Project            | Stripe Keys  |
-|-------------|----------------------------|--------------|
+|----|----|-----|
 | Local       | good-night-games-staging   | sk_test_...  |
 | Staging     | good-night-games-staging   | sk_test_...  |
 | Production  | good-night-games-production | sk_live_... |
@@ -300,7 +301,7 @@ The project follows a phased implementation plan. Always be aware of the current
 phase before suggesting changes:
 
 | Phase | Status | Deliverable |
-|-------|--------|-------------|
+|----|-----|----|
 | 1–3   | ✅ Done | Full frontend UI in SurveyShowdown.jsx |
 | 4     | ⬜ Next | Backend scaffold + Prisma schema |
 | 5     | ⬜      | All API endpoints |

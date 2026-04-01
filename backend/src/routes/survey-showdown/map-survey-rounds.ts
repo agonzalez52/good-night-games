@@ -4,7 +4,7 @@
  */
 
 type SurveyRoundAnswer = {
-  readonly text: string
+  readonly answer: string
   readonly points: number
 }
 
@@ -14,7 +14,7 @@ type SurveyRound = {
 }
 
 type AnswerRow = {
-  text: string
+  answer: string
   points: number
   display_order: number
 }
@@ -35,6 +35,6 @@ export function mapQuestionsToRounds(questions: readonly QuestionRow[]): SurveyR
     question: q.question,
     answers: [...q.answers]
       .sort((a, b) => a.display_order - b.display_order)
-      .map((a) => ({ text: a.text, points: a.points })),
+      .map((a) => ({ answer: a.answer, points: a.points })),
   }))
 }

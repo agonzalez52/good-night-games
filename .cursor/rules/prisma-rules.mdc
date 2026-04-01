@@ -1,5 +1,6 @@
 ---
-alwaysApply: true
+description: Apply when dealing with Schema changes that involve Prisma
+alwaysApply: false
 ---
 
 You are a senior TypeScript/JavaScript programmer with expertise in Prisma, clean code principles, and modern backend development.

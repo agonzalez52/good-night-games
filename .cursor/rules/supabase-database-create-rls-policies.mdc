@@ -1,5 +1,6 @@
 ---
-alwaysApply: true
+description: Apply when dealing with Database RLS policies with Supabase
+alwaysApply: false
 ---
 
 # Database: Create RLS policies

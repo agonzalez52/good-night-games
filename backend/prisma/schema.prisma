@@ -117,7 +117,7 @@ model survey_questions {
 model survey_answers {
   id            String           @id @default(uuid())
   question_id   String
-  text          String
+  answer        String
   points        Int
   display_order Int
   question      survey_questions @relation(fields: [question_id], references: [id], onDelete: Cascade)
