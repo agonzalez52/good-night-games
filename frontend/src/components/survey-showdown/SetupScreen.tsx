@@ -19,6 +19,8 @@ import type { CurrentUser, CustomSurvey, CustomCollection, Round, GameHistoryRec
 interface SetupScreenProps {
   onStart: (team1: string, team2: string, timerSecs: number, numRounds: number) => void
   packRounds: Round[]
+  /** True while Supabase session + backend profile are still resolving on first load */
+  authLoading?: boolean
   currentUser: CurrentUser | null
   onSignIn: (user: CurrentUser) => void
   onSignOut: () => void
@@ -38,7 +40,7 @@ interface SetupScreenProps {
 }
 
 export default function SetupScreen({
-  onStart, packRounds, currentUser, onSignIn, onSignOut, onTokensUpdated,
+  onStart, packRounds, authLoading = false, currentUser, onSignIn, onSignOut, onTokensUpdated,
   onOpenPurchaseModal, selectedPackId, onSelectPack,
   customSurveys, customCollections, onSaveSurvey, onDeleteSurvey,
   onSaveCollection, onDeleteCollection, onCloseSurveys,
@@ -99,6 +101,7 @@ export default function SetupScreen({
       {/* Top bar */}
       <div style={{ position: 'relative', zIndex: 10, flexShrink: 0 }}>
         <SetupHeader
+          authLoading={authLoading}
           currentUser={currentUser} onSignIn={onSignIn} onSignOut={onSignOut}
           onTokensUpdated={onTokensUpdated} onOpenPurchaseModal={onOpenPurchaseModal}
           onOpenCustomSurveys={() => setShowCustomSurveys(true)}

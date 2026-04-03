@@ -30,6 +30,7 @@ interface Team { name: string; score: number }
 export default function SurveyShowdownApp() {
   const {
     currentUser,
+    loading: authLoading,
     updateTokenBalance,
     markEmailVerified,
     signOut,
@@ -228,6 +229,7 @@ export default function SurveyShowdownApp() {
       {screen === 'setup' && (
         <SetupScreen
           onStart={startGame} packRounds={packRounds}
+          authLoading={authLoading}
           currentUser={currentUser} onSignIn={handleSignIn} onSignOut={handleSignOut}
           onTokensUpdated={handleTokensUpdated} onOpenPurchaseModal={() => setShowPurchaseModal(true)}
           selectedPackId={selectedPackId} onSelectPack={setSelectedPackId}
