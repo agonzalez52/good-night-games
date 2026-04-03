@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useAuth } from '@/hooks/useAuth'
 import SetupScreen from '@/components/survey-showdown/SetupScreen'
 import FaceOffScreen from '@/components/survey-showdown/FaceOffScreen'
 import BoardScreen from '@/components/survey-showdown/BoardScreen'
@@ -15,56 +16,6 @@ import {
 } from '@/lib/constants'
 import type { CurrentUser, CustomSurvey, CustomCollection, GameHistoryRecord } from '@/lib/constants'
 
-// ─── GLOBAL CSS ───────────────────────────────────────────────────────────────
-// This is injected inline for the single-file phase. In Phase 6 this moves to
-// src/app/globals.css (already done separately in the Next.js scaffold).
-// Keep this here only until the Next.js project is running and globals.css is active.
-const GLOBAL_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Russo+One&family=DM+Sans:ital,wght@0,400;0,500;0,600&family=Bebas+Neue&display=swap');
-  :root {
-    --bg:#060914; --surface:rgba(255,255,255,0.035); --surface-2:rgba(255,255,255,0.06);
-    --border:rgba(255,255,255,0.075); --border-2:rgba(255,255,255,0.13);
-    --blue:#4D7EFF; --blue-dim:rgba(77,126,255,0.18); --blue-glow:rgba(77,126,255,0.35);
-    --gold:#F0A500; --gold-mid:#C07A00; --gold-dim:rgba(240,165,0,0.14); --gold-glow:rgba(240,165,0,0.35);
-    --green:#0FD98A; --green-dim:rgba(15,217,138,0.14); --green-glow:rgba(15,217,138,0.3);
-    --red:#FF4D6A; --red-dim:rgba(255,77,106,0.14); --red-glow:rgba(255,77,106,0.3);
-    --purple:#9B6DFF; --text:#EEF2FF; --text-muted:#A0B4CC; --text-faint:#6677AA;
-    --font-display:'Russo One',sans-serif; --font-score:'Bebas Neue',sans-serif; --font-body:'DM Sans',sans-serif;
-    --radius-sm:8px; --radius:14px; --radius-lg:20px;
-  }
-  @keyframes xPop{0%{transform:scale(0) rotate(-15deg);opacity:0}60%{transform:scale(1.18) rotate(3deg)}100%{transform:scale(1) rotate(0);opacity:1}}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.45}}
-  @keyframes slideUp{from{transform:translateY(22px);opacity:0}to{transform:translateY(0);opacity:1}}
-  @keyframes slideDown{from{transform:translateY(-10px);opacity:0}to{transform:translateY(0);opacity:1}}
-  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-  @keyframes glow{0%,100%{text-shadow:0 4px 0 rgba(0,0,0,0.4),0 0 60px rgba(240,165,0,0.45),0 0 120px rgba(240,165,0,0.2)}50%{text-shadow:0 4px 0 rgba(0,0,0,0.4),0 0 80px rgba(240,165,0,0.7),0 0 160px rgba(240,165,0,0.35),0 0 240px rgba(240,165,0,0.12)}}
-  @keyframes blueGlow{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 32px var(--blue-glow)}}
-  @keyframes timerPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
-  @keyframes menuSlide{from{transform:translateY(-8px) scale(0.97);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}
-  @keyframes tileReveal{0%{transform:scaleY(0) translateY(-4px);opacity:0}100%{transform:scaleY(1) translateY(0);opacity:1}}
-  @keyframes shimmer{0%{background-position:200% center}100%{background-position:-200% center}}
-  @keyframes scoreUp{0%{transform:scale(1)}40%{transform:scale(1.22)}100%{transform:scale(1)}}
-  @keyframes borderPulse{0%,100%{border-color:rgba(77,126,255,0.2)}50%{border-color:rgba(77,126,255,0.7)}}
-  @keyframes staggerIn{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}
-  @keyframes logoIn{from{transform:scale(0.88) translateY(-12px);opacity:0}to{transform:scale(1) translateY(0);opacity:1}}
-  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
-  *{box-sizing:border-box;margin:0;padding:0;}
-  input,textarea{outline:none;font-family:var(--font-body);}
-  input::placeholder{color:var(--text-faint);opacity:1;}
-  button{font-family:var(--font-display);transition:filter 0.15s ease,transform 0.12s ease,box-shadow 0.15s ease;cursor:pointer;position:relative;overflow:hidden;}
-  button:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px);}
-  button:active:not(:disabled){filter:brightness(0.92);transform:scale(0.97) translateY(0px);}
-  button:disabled{opacity:0.38;cursor:default;transform:none!important;}
-  @keyframes redPulse{0%,100%{box-shadow:0 0 10px rgba(255,77,106,0.3),0 0 24px rgba(255,77,106,0.12)}50%{box-shadow:0 0 16px rgba(255,77,106,0.55),0 0 40px rgba(255,77,106,0.22)}}
-  @keyframes greenPulse{0%,100%{box-shadow:0 0 10px rgba(15,217,138,0.2),0 0 24px rgba(15,217,138,0.08)}50%{box-shadow:0 0 16px rgba(15,217,138,0.4),0 0 40px rgba(15,217,138,0.16)}}
-  @keyframes coinFly{0%{transform:translate(0,0) scale(1.1);opacity:1}80%{opacity:1}100%{transform:translate(var(--coin-dx),var(--coin-dy)) scale(0.25);opacity:0}}
-  @keyframes tokenPop{0%{transform:scale(1)}30%{transform:scale(1.35)}70%{transform:scale(0.95)}100%{transform:scale(1)}}
-  ::-webkit-scrollbar{width:5px}
-  ::-webkit-scrollbar-track{background:transparent}
-  ::-webkit-scrollbar-thumb{background:rgba(77,126,255,0.25);border-radius:4px}
-  ::-webkit-scrollbar-thumb:hover{background:rgba(77,126,255,0.45)}
-`
-
 interface FlyingCoin {
   id: number
   startX: number
@@ -77,6 +28,15 @@ interface FlyingCoin {
 interface Team { name: string; score: number }
 
 export default function SurveyShowdownApp() {
+  const {
+    currentUser,
+    updateTokenBalance,
+    markEmailVerified,
+    signOut,
+    setAuthUser,
+    patchUser,
+  } = useAuth()
+
   const [screen, setScreen] = useState<'setup' | 'faceoff' | 'board'>('setup')
   const [teams, setTeams] = useState<Team[]>([{ name: 'TEAM 1', score: 0 }, { name: 'TEAM 2', score: 0 }])
   const [numRounds, setNumRounds] = useState(5)
@@ -86,7 +46,6 @@ export default function SurveyShowdownApp() {
   const [faceOffAnswerIndex, setFaceOffAnswerIndex] = useState<number | null>(null)
   const [shuffledRounds, setShuffledRounds] = useState<ReturnType<typeof resolvePackRounds>>([])
   const [apiKey] = useState('') // Phase 8: remove entirely — judge moves to backend
-  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
 
   // Pack selection & custom surveys
   const [selectedPackId, setSelectedPackId] = useState('free_classic')
@@ -109,18 +68,22 @@ export default function SurveyShowdownApp() {
   const packRounds = resolvePackRounds(selectedPackId, customSurveys, customCollections)
   const activeRounds = shuffledRounds.length ? shuffledRounds : packRounds.slice(0, numRounds)
 
-  function handleSignIn(user: CurrentUser) { setCurrentUser(user) }
-  function handleSignOut() {
-    setCurrentUser(null)
+  function handleSignIn(user: CurrentUser) {
+    setAuthUser(user)
+  }
+  async function handleSignOut() {
+    await signOut()
     const isCustom = !FREE_PACKS.some(p => p.id === selectedPackId) && !PREMIUM_PACKS.some(p => p.id === selectedPackId) && selectedPackId !== 'random'
     if (isCustom) setSelectedPackId('free_classic')
   }
-  function handleTokensUpdated(newBalance: number) { setCurrentUser(u => u ? { ...u, tokenBalance: newBalance, emailVerified: true } : u) }
+  function handleTokensUpdated(newBalance: number) {
+    updateTokenBalance(newBalance)
+    markEmailVerified()
+  }
 
   // Phase 9: replace with real referral data from GET /api/referrals
   function handleSimulateReferral() {
-    setCurrentUser(u => {
-      if (!u) return u
+    patchUser(u => {
       const current = u.referralsClaimed || 0
       if (current >= 3) return u
       return { ...u, referralsClaimed: current + 1, tokenBalance: (u.tokenBalance || 0) + 2 }
@@ -178,7 +141,7 @@ export default function SurveyShowdownApp() {
     playCoinCollect(COIN_COUNT)
     const lastCoinLands = COIN_DURATION + (COIN_COUNT - 1) * STAGGER + 80
     setTimeout(() => {
-      setCurrentUser(u => u ? { ...u, tokenBalance: (u.tokenBalance || 0) + tokenAmount } : u)
+      patchUser(u => ({ ...u, tokenBalance: (u.tokenBalance || 0) + tokenAmount }))
       setFlyingCoins([])
     }, lastCoinLands)
   }
@@ -187,7 +150,7 @@ export default function SurveyShowdownApp() {
   // Phase 7: call POST /api/tokens/spend { amount: TOKENS_PER_GAME } before setScreen('faceoff')
   function commitGame(t1: string, t2: string, secs: number, nr: number, usedTokens: boolean) {
     if (usedTokens) {
-      setCurrentUser(u => u ? { ...u, tokenBalance: Math.max(0, (u.tokenBalance || 0) - TOKENS_PER_GAME) } : u)
+      patchUser(u => ({ ...u, tokenBalance: Math.max(0, (u.tokenBalance || 0) - TOKENS_PER_GAME) }))
     }
     if (!usedTokens && !currentUser) { setFreeGamesPlayed(n => n + 1) }
     setIsTokenGame(!!usedTokens)

@@ -1,30 +1,70 @@
 import { Hono } from 'hono'
 import { requireAuth, AuthVariables } from '../middleware/auth'
 import { prisma } from '../lib/prisma'
+import { supabaseAdmin } from '../lib/supabase'
 
 const FREE_SIGNUP_TOKENS = 4
+/** Not a Stripe id — purchase row for analytics; one row per user via atomic claim below. */
+const SIGNUP_BONUS_BUNDLE_ID = 'email_verification_bonus'
 
 const auth = new Hono<{ Variables: AuthVariables }>()
 
 // POST /api/auth/verify-email
-// Called after email verification — credits 4 free tokens once
-// Idempotent: safe to call multiple times, only credits once
+// Syncs public.users.email_verified from Supabase; credits 4 free tokens once after verify.
+// Idempotent: safe to call multiple times.
 auth.post('/verify-email', requireAuth, async (c) => {
   const userId = c.get('userId')
+  const authHeader = c.req.header('Authorization')
+  const jwt = authHeader?.replace(/^Bearer\s+/i, '') ?? ''
+
+  const { data: { user: authUser }, error: authErr } = await supabaseAdmin.auth.getUser(jwt)
+  if (authErr || !authUser) return c.json({ error: 'Unauthorized' }, 401)
+
+  const supabaseEmailVerified = Boolean(authUser.email_confirmed_at)
+
   try {
     const user = await prisma.users.findUnique({ where: { id: userId } })
 
     if (!user) return c.json({ error: 'User not found' }, 404)
 
+    if (supabaseEmailVerified && !user.email_verified) {
+      await prisma.users.update({
+        where: { id: userId },
+        data: { email_verified: true },
+      })
+    }
+
+    if (!supabaseEmailVerified) {
+      const tokenRecord = await prisma.user_tokens.findUnique({ where: { user_id: userId } })
+      return c.json({
+        balance: tokenRecord?.balance ?? 0,
+        alreadyCredited: user.signup_tokens_credited,
+        email_verified: user.email_verified,
+      })
+    }
+
     // Already credited — idempotent, return current balance
     if (user.signup_tokens_credited) {
       const tokenRecord = await prisma.user_tokens.findUnique({ where: { user_id: userId } })
-      return c.json({ balance: tokenRecord?.balance ?? 0, alreadyCredited: true })
+      return c.json({
+        balance: tokenRecord?.balance ?? 0,
+        alreadyCredited: true,
+        email_verified: true,
+      })
     }
 
-    // Credit tokens and mark as credited in a transaction
-    const [updated] = await prisma.$transaction([
-      prisma.user_tokens.upsert({
+    // Claim signup bonus exactly once: concurrent verify-email calls (e.g. INITIAL_SESSION +
+    // SIGNED_IN + USER_UPDATED) must not each increment — only the first updateMany wins.
+    const result = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.users.updateMany({
+        where: { id: userId, signup_tokens_credited: false },
+        data: { signup_tokens_credited: true, email_verified: true },
+      })
+      if (claimed.count === 0) {
+        const tokenRecord = await tx.user_tokens.findUnique({ where: { user_id: userId } })
+        return { credited: false as const, balance: tokenRecord?.balance ?? 0 }
+      }
+      const updated = await tx.user_tokens.upsert({
         where: { user_id: userId },
         update: {
           balance: { increment: FREE_SIGNUP_TOKENS },
@@ -36,14 +76,24 @@ auth.post('/verify-email', requireAuth, async (c) => {
           lifetime_purchased: FREE_SIGNUP_TOKENS,
           lifetime_spent: 0,
         },
-      }),
-      prisma.users.update({
-        where: { id: userId },
-        data: { signup_tokens_credited: true },
-      }),
-    ])
+      })
+      await tx.purchases.create({
+        data: {
+          user_id: userId,
+          stripe_payment_id: `email_verification:${userId}`,
+          bundle_id: SIGNUP_BONUS_BUNDLE_ID,
+          tokens_purchased: FREE_SIGNUP_TOKENS,
+          amount_paid_cents: 0,
+        },
+      })
+      return { credited: true as const, balance: updated.balance }
+    })
 
-    return c.json({ balance: updated.balance, alreadyCredited: false })
+    return c.json({
+      balance: result.balance,
+      alreadyCredited: !result.credited,
+      email_verified: true,
+    })
   } catch (error) {
     console.error('POST /api/auth/verify-email error:', error)
     return c.json({ error: 'Internal server error' }, 500)

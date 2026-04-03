@@ -57,7 +57,10 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { username: username || email.split('@')[0] } },
+      options: {
+        data: { username: username || email.split('@')[0] },
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/games/survey-showdown`,
+      },
     })
     setLoading(false)
     if (signUpError) { setError(signUpError.message); return }
@@ -98,7 +101,9 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
     const supabase = createClient()
     const { error: otpError } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin },
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/games/survey-showdown`,
+      },
     })
     setLoading(false)
     if (otpError) { setError(otpError.message); return }

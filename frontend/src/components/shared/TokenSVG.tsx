@@ -5,13 +5,20 @@
 // Gradient ID: tokenFill — used across all instances.
 // Sizes used in the app: 13, 14, 15, 16, 18, 20, 22, 48px
 
+/** SSR-safe: Node vs browser Math.cos/sin can differ at the last ULP; round so markup matches. */
+function svgCoord(n: number): number {
+  return Math.round(n * 1e6) / 1e6;
+}
+
 export default function TokenSVG({ size = 20 }: { size?: number }) {
   const star = (cx: number, cy: number, dy: number, outer: number, inner: number) => {
     const pts: string[] = [];
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
       const r = i % 2 === 0 ? outer : inner;
-      pts.push(`${cx + r * Math.cos(a)},${cy + dy + r * Math.sin(a)}`);
+      const x = svgCoord(cx + r * Math.cos(a));
+      const y = svgCoord(cy + dy + r * Math.sin(a));
+      pts.push(`${x},${y}`);
     }
     return pts.join(" ");
   };
@@ -43,7 +50,15 @@ export default function TokenSVG({ size = 20 }: { size?: number }) {
       {/* Milled edge dots */}
       {Array.from({ length: 24 }, (_, i) => {
         const a = (i / 24) * Math.PI * 2;
-        return <circle key={i} cx={10 + 7.6 * Math.cos(a)} cy={10 + 7.6 * Math.sin(a)} r="0.45" fill="rgba(120,70,0,0.5)" />;
+        return (
+          <circle
+            key={i}
+            cx={svgCoord(10 + 7.6 * Math.cos(a))}
+            cy={svgCoord(10 + 7.6 * Math.sin(a))}
+            r="0.45"
+            fill="rgba(120,70,0,0.5)"
+          />
+        );
       })}
       {/* Compass star — shadow layer */}
       <polygon points={star(10, 10, 0.3, 3.5, 1.1)} fill="rgba(140,80,0,0.5)" />
