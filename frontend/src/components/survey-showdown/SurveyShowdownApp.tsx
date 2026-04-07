@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import SetupScreen from '@/components/survey-showdown/SetupScreen'
 import FaceOffScreen from '@/components/survey-showdown/FaceOffScreen'
@@ -37,6 +38,19 @@ export default function SurveyShowdownApp() {
     setAuthUser,
     patchUser,
   } = useAuth()
+
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const recoveryOpened = useRef(false)
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false)
+
+  useEffect(() => {
+    if (recoveryOpened.current) return
+    if (searchParams.get('recovery') !== 'true') return
+    recoveryOpened.current = true
+    setShowRecoveryModal(true)
+    router.replace('/games/survey-showdown', { scroll: false })
+  }, [searchParams, router])
 
   const [screen, setScreen] = useState<'setup' | 'faceoff' | 'board'>('setup')
   const [teams, setTeams] = useState<Team[]>([{ name: 'TEAM 1', score: 0 }, { name: 'TEAM 2', score: 0 }])
@@ -285,6 +299,14 @@ export default function SurveyShowdownApp() {
       )}
       {showSignInGate && (
         <AuthModal initialMode="signin" onClose={() => setShowSignInGate(false)} onAuth={user => { handleSignIn(user); setShowSignInGate(false) }} onTokenCredit={n => { handleTokensUpdated((currentUser?.tokenBalance || 0) + n); setShowSignInGate(false) }} />
+      )}
+      {showRecoveryModal && (
+        <AuthModal
+          initialMode="reset-password"
+          onClose={() => setShowRecoveryModal(false)}
+          onAuth={user => { handleSignIn(user); setShowRecoveryModal(false) }}
+          onTokenCredit={n => { handleTokensUpdated((currentUser?.tokenBalance || 0) + n); setShowRecoveryModal(false) }}
+        />
       )}
       {showPurchaseModal && (
         <TokenPurchaseModal currentBalance={currentUser?.tokenBalance || 0} onClose={() => setShowPurchaseModal(false)} onPurchase={handlePurchase} />

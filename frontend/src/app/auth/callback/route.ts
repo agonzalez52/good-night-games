@@ -3,9 +3,10 @@ import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// Handles the OAuth redirect from Google (and magic link redirects).
-// Supabase sends a ?code= param here after the user authorises.
-// We exchange it for a session, then redirect to the game.
+// Handles OAuth (Google), magic links, and password recovery: Supabase redirects here
+// with ?code= (PKCE). We exchange for a session, then redirect to `next` (default: game).
+// Recovery emails must use redirectTo pointing here — never the home URL, or the root
+// page's redirect would drop ?code= and leave the user logged out.
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')

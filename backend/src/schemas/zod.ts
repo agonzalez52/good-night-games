@@ -49,3 +49,12 @@ export const historySchema = z.object({
   score1: z.number().int().min(0),
   score2: z.number().int().min(0),
 })
+
+/** POST /api/auth/signup-provider-hint — Turnstile or fresh session JWT; used after signUp when client identities are empty. */
+export const signupProviderHintSchema = z.object({
+  email: z.string().email().max(320),
+  /** Required unless Authorization bears a Supabase JWT for this user (see supabaseUserId + email match). */
+  turnstileToken: z.string().min(1).max(4096).optional(),
+  /** When using Bearer token, must match JWT sub so we do not rely on client email matching alone. */
+  supabaseUserId: z.string().uuid().optional(),
+})
