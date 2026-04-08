@@ -25,7 +25,7 @@ create table "survey_questions" (
 create table "survey_answers" (
     "id" text not null,
     "question_id" text not null,
-    "text" text not null,
+    "answer" text not null,
     "points" integer not null,
     "display_order" integer not null,
 
@@ -119,11 +119,11 @@ inserted_questions as (
     from rounds
     returning "id", "pack_id", "display_order"
 )
-insert into "survey_answers" ("id", "question_id", "text", "points", "display_order")
+insert into "survey_answers" ("id", "question_id", "answer", "points", "display_order")
 select
     gen_random_uuid()::text as id,
     q."id" as question_id,
-    a.answer->>'text' as text,
+    a.answer->>'text' as answer,
     round(extracted.pts)::int as points,
     (a.ord - 1)::int as display_order
 from inserted_questions q

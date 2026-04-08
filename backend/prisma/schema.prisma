@@ -42,14 +42,23 @@ model token_bundles {
   updated_at      DateTime @updatedAt
 }
 
+enum PurchaseStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
 model purchases {
-  id                String   @id @default(uuid())
+  id                String         @id @default(uuid())
   user_id           String
   stripe_payment_id String
   bundle_id         String
   tokens_purchased  Int
   amount_paid_cents Int
-  created_at        DateTime @default(now())
+  status            PurchaseStatus @default(PENDING)
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @default(now()) @updatedAt
 }
 
 model referrals {

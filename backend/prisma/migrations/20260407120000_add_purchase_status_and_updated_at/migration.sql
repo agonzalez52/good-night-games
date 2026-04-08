@@ -1,0 +1,6 @@
+-- CreateEnum
+CREATE TYPE "PurchaseStatus" AS ENUM ('PENDING', 'COMPLETED', 'FAILED', 'REFUNDED');
+
+-- AlterTable
+ALTER TABLE "purchases" ADD COLUMN "status" "PurchaseStatus" NOT NULL DEFAULT 'PENDING';
+ALTER TABLE "purchases" ADD COLUMN "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
