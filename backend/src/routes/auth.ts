@@ -82,7 +82,8 @@ auth.post('/verify-email', requireAuth, async (c) => {
       await tx.purchases.create({
         data: {
           user_id: userId,
-          stripe_payment_id: `email_verification:${userId}`,
+          stripe_checkout_session_id: `email_verification:${userId}`,
+          stripe_payment_intent_id: null,
           bundle_id: SIGNUP_BONUS_BUNDLE_ID,
           tokens_purchased: FREE_SIGNUP_TOKENS,
           amount_paid_cents: 0,

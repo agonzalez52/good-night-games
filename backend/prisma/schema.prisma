@@ -50,15 +50,16 @@ enum PurchaseStatus {
 }
 
 model purchases {
-  id                String         @id @default(uuid())
-  user_id           String
-  stripe_payment_id String
-  bundle_id         String
-  tokens_purchased  Int
-  amount_paid_cents Int
-  status            PurchaseStatus @default(PENDING)
-  created_at        DateTime       @default(now())
-  updated_at        DateTime       @default(now()) @updatedAt
+  id                         String         @id @default(uuid())
+  user_id                    String
+  stripe_checkout_session_id String
+  stripe_payment_intent_id   String?
+  bundle_id                  String
+  tokens_purchased           Int
+  amount_paid_cents          Int
+  status                     PurchaseStatus @default(PENDING)
+  created_at                 DateTime       @default(now())
+  updated_at                 DateTime       @default(now()) @updatedAt
 }
 
 model referrals {

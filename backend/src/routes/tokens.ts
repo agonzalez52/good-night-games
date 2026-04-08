@@ -108,10 +108,16 @@ tokens.post('/purchase', requireAuth, async (c) => {
       return c.json({ error: 'Could not create checkout session' }, 500)
     }
 
+    const paymentIntentId =
+      typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : session.payment_intent?.id ?? null
+
     await prisma.purchases.create({
       data: {
         user_id: userId,
-        stripe_payment_id: session.id,
+        stripe_checkout_session_id: session.id,
+        stripe_payment_intent_id: paymentIntentId,
         bundle_id: bundle.id,
         tokens_purchased: bundle.tokens,
         amount_paid_cents: amountPaidCents,
