@@ -294,12 +294,23 @@ export default function SetupHeader({
   const initials = currentUser?.username ? currentUser.username.slice(0, 2).toUpperCase() : '?'
   const balance = currentUser?.tokenBalance ?? 0
   const zeroBal = currentUser && balance === 0
+  /** Session is syncing (e.g. after sign-in) — hide logged-in/out chrome until /me + balance return */
   const headerPending = authLoading && !currentUser
+
+  useEffect(() => {
+    if (headerPending) setOpen(false)
+  }, [headerPending])
 
   return (
     <>
-      <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', position: 'relative', zIndex: 1000, flexShrink: 0 }}>
+      <div
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', position: 'relative', zIndex: 1000, flexShrink: 0 }}
+        aria-busy={headerPending}
+      >
         <div style={{ minWidth: 60, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {headerPending && (
+            <div style={{ width: 88, height: 34, borderRadius: 100, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} aria-hidden />
+          )}
           {currentUser && (
             <>
               <div key={pillAnimKey} data-token-pill onClick={() => onOpenPurchaseModal()}
@@ -324,11 +335,6 @@ export default function SetupHeader({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {headerPending && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 120, height: 34, borderRadius: 10, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} aria-hidden />
-            </div>
-          )}
           {!headerPending && !currentUser && (
             <button onClick={() => { setAuthMode('signup'); setShowAuth(true) }}
               style={{ padding: '8px 14px', borderRadius: 10, fontSize: 11, fontFamily: 'var(--font-display)', letterSpacing: '0.06em', background: '#F0A500', color: '#fff', border: 'none', boxShadow: '0 2px 10px rgba(240,165,0,0.3)', whiteSpace: 'nowrap' }}>
@@ -337,9 +343,13 @@ export default function SetupHeader({
           )}
 
           <div ref={menuRef} style={{ position: 'relative', display: 'inline-block' }}>
-            <button type="button" onClick={() => !headerPending && setOpen(o => !o)} disabled={headerPending} title="Settings" aria-busy={headerPending} style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${open ? 'rgba(77,126,255,0.4)' : 'rgba(255,255,255,0.09)'}`, background: open ? 'rgba(77,126,255,0.15)' : 'rgba(255,255,255,0.04)', cursor: headerPending ? 'default' : 'pointer', opacity: headerPending ? 0.45 : 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4.5, padding: '9px', transition: 'all 0.2s ease' }}>
-              {[0, 1, 2].map(i => (<div key={i} style={{ width: 16, height: 2, borderRadius: 2, background: open ? '#4D7EFF' : 'var(--text-muted)', transition: 'all 0.22s ease', transform: open && i === 0 ? 'translateY(6.5px) rotate(45deg)' : open && i === 2 ? 'translateY(-6.5px) rotate(-45deg)' : open && i === 1 ? 'scaleX(0)' : 'none' }} />))}
-            </button>
+            {headerPending ? (
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} aria-hidden />
+            ) : (
+              <button type="button" onClick={() => setOpen(o => !o)} title="Settings" style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${open ? 'rgba(77,126,255,0.4)' : 'rgba(255,255,255,0.09)'}`, background: open ? 'rgba(77,126,255,0.15)' : 'rgba(255,255,255,0.04)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4.5, padding: '9px', transition: 'all 0.2s ease' }}>
+                {[0, 1, 2].map(i => (<div key={i} style={{ width: 16, height: 2, borderRadius: 2, background: open ? '#4D7EFF' : 'var(--text-muted)', transition: 'all 0.22s ease', transform: open && i === 0 ? 'translateY(6.5px) rotate(45deg)' : open && i === 2 ? 'translateY(-6.5px) rotate(-45deg)' : open && i === 1 ? 'scaleX(0)' : 'none' }} />))}
+              </button>
+            )}
             {open && (
               <div style={{ position: 'absolute', top: 48, right: 0, width: 260, background: 'rgba(8,12,28,0.96)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16, boxShadow: '0 16px 56px rgba(0,0,0,0.7)', padding: '14px', animation: 'menuSlide 0.2s ease-out', backdropFilter: 'blur(20px)' }}>
                 {currentUser && (<>

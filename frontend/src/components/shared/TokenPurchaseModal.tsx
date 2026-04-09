@@ -218,9 +218,20 @@ export default function TokenPurchaseModal({ onClose, onPurchase, currentBalance
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(8px)', padding: '16px' }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={{ background: 'rgba(8,12,28,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '28px', width: 'min(520px,96vw)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', animation: 'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
+      <div style={{
+        background: 'rgba(8,12,28,0.98)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: 20,
+        width: 'min(520px,92vw)',
+        maxHeight: 'calc(100vh - 32px)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.7)',
+        animation: 'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)',
+      }}>
 
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0, padding: '28px 28px 0 28px' }}>
           <div>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: '#F0A500', display: 'flex', alignItems: 'center', gap: 8 }}>
               {step === 'pay' ? 'Complete payment' : 'Get Tokens'}
@@ -234,6 +245,15 @@ export default function TokenPurchaseModal({ onClose, onPurchase, currentBalance
           </div>
           <button type="button" onClick={onClose} style={{ width: 34, height: 34, borderRadius: 8, fontSize: 16, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
         </div>
+
+        <div style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
+          WebkitOverflowScrolling: 'touch',
+          padding: '22px 28px 28px 28px',
+        }}>
 
         {bundlesLoading && (
           <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: 24 }}>Loading packs…</div>
@@ -331,6 +351,7 @@ export default function TokenPurchaseModal({ onClose, onPurchase, currentBalance
             Secure checkout with Stripe
           </div>
         )}
+        </div>
       </div>
     </div>
   )

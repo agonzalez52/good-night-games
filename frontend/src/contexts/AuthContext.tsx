@@ -120,6 +120,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           void (async () => {
             try {
+              // After password / magic sign-in, `loading` was already false from the logged-out
+              // initial session — keep it true until /me + /balance return so the header never
+              // flashes logged-out chrome (INITIAL_SESSION already starts with loading === true).
+              if (event === 'SIGNED_IN') {
+                setLoading(true)
+              }
               const runVerifyEmail =
                 session.user.email_confirmed_at &&
                 session.access_token &&
@@ -142,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               const profile = await fetchUserProfile(session)
               if (!cancelled) setCurrentUser(profile)
             } finally {
-              if (!cancelled && event === 'INITIAL_SESSION') {
+              if (!cancelled) {
                 setLoading(false)
               }
             }

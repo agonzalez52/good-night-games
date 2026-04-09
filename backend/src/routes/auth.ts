@@ -87,6 +87,7 @@ auth.post('/verify-email', requireAuth, async (c) => {
           bundle_id: SIGNUP_BONUS_BUNDLE_ID,
           tokens_purchased: FREE_SIGNUP_TOKENS,
           amount_paid_cents: 0,
+          status: 'COMPLETED'
         },
       })
       return { credited: true as const, balance: updated.balance }

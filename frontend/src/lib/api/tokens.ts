@@ -39,12 +39,34 @@ function normalizeBundle(row: Record<string, unknown>): TokenBundle {
   }
 }
 
-// GET /api/tokens/bundles — public
+/** Public catalog; safe to reuse briefly to avoid duplicate requests (Strict Mode + reopen modal). */
+const TOKEN_BUNDLES_CACHE_TTL_MS = 120_000
+
+let tokenBundlesCache: { expiresAt: number; data: TokenBundle[] } | null = null
+let tokenBundlesInflight: Promise<TokenBundle[]> | null = null
+
+// GET /api/tokens/bundles — public (deduped in-flight + short memory cache)
 export async function getTokenBundles(): Promise<TokenBundle[]> {
-  const res = await fetch(`${BACKEND_URL}/api/tokens/bundles`)
-  if (!res.ok) throw new Error('Failed to fetch bundles')
-  const rows: Record<string, unknown>[] = await res.json()
-  return rows.map(normalizeBundle)
+  const now = Date.now()
+  if (tokenBundlesCache && tokenBundlesCache.expiresAt > now)
+    return tokenBundlesCache.data
+  if (tokenBundlesInflight) return tokenBundlesInflight
+
+  tokenBundlesInflight = (async () => {
+    const res = await fetch(`${BACKEND_URL}/api/tokens/bundles`)
+    if (!res.ok) throw new Error('Failed to fetch bundles')
+    const rows: Record<string, unknown>[] = await res.json()
+    return rows.map(normalizeBundle)
+  })()
+    .then(data => {
+      tokenBundlesCache = { expiresAt: Date.now() + TOKEN_BUNDLES_CACHE_TTL_MS, data }
+      return data
+    })
+    .finally(() => {
+      tokenBundlesInflight = null
+    })
+
+  return tokenBundlesInflight
 }
 
 // GET /api/tokens/balance
