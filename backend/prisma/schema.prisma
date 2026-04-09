@@ -52,7 +52,8 @@ enum PurchaseStatus {
 model purchases {
   id                         String         @id @default(uuid())
   user_id                    String
-  stripe_checkout_session_id String
+  /// Set for Stripe Checkout; null when using PaymentIntent + PaymentElement only
+  stripe_checkout_session_id String?
   stripe_payment_intent_id   String?
   bundle_id                  String
   tokens_purchased           Int

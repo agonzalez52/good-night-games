@@ -1,4 +1,4 @@
-import type { Round } from '@/lib/constants'
+import type { Round, SurveyPack } from '@/lib/constants'
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
 
@@ -15,8 +15,8 @@ export type SurveyPackApiBase = {
 /** Free packs in the list response include inline rounds (same shape as `Round` in app code). */
 export type SurveyPackFreeListItem = SurveyPackApiBase & { rounds: Round[] }
 
-/** Premium packs in the list response omit rounds; load with `getPackRounds` after spending tokens. */
-export type SurveyPackPremiumListItem = SurveyPackApiBase
+/** Premium packs omit `rounds` in the list; `round_count` is for setup UI before GET .../rounds. */
+export type SurveyPackPremiumListItem = SurveyPackApiBase & { round_count: number }
 
 export type GetPacksResponse = {
   free: SurveyPackFreeListItem[]
@@ -39,4 +39,27 @@ export async function getPackRounds(packId: string, token: string): Promise<GetP
   })
   if (!res.ok) throw new Error('Failed to fetch pack rounds')
   return (await res.json()) as GetPackRoundsResponse
+}
+
+/** Merge GET /packs response with cached premium `rounds` for `resolvePackRounds` / game logic. */
+export function mergeSurveyPacksForGame(
+  free: SurveyPackFreeListItem[],
+  premium: SurveyPackPremiumListItem[],
+  premiumRoundsById: Record<string, Round[]>
+): SurveyPack[] {
+  const fromFree: SurveyPack[] = free.map(p => ({
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    is_free: true,
+    rounds: p.rounds,
+  }))
+  const fromPremium: SurveyPack[] = premium.map(p => ({
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    is_free: false,
+    rounds: premiumRoundsById[p.id] ?? [],
+  }))
+  return [...fromFree, ...fromPremium]
 }

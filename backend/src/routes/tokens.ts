@@ -1,4 +1,6 @@
 import { Hono } from 'hono'
+import type { Context } from 'hono'
+import type { Prisma } from '@prisma/client'
 import Stripe from 'stripe'
 import { requireAuth, AuthVariables } from '../middleware/auth'
 import { prisma } from '../lib/prisma'
@@ -7,7 +9,145 @@ import { spendTokensSchema, tokenPurchaseSchema } from '../schemas/zod'
 
 const TOKENS_PER_GAME = 2
 
+async function creditTokensForPurchase(
+  tx: Prisma.TransactionClient,
+  purchase: { id: string; user_id: string; tokens_purchased: number },
+) {
+  await tx.purchases.update({
+    where: { id: purchase.id },
+    data: { status: 'COMPLETED' },
+  })
+  await tx.user_tokens.upsert({
+    where: { user_id: purchase.user_id },
+    update: {
+      balance: { increment: purchase.tokens_purchased },
+      lifetime_purchased: { increment: purchase.tokens_purchased },
+    },
+    create: {
+      user_id: purchase.user_id,
+      balance: purchase.tokens_purchased,
+      lifetime_purchased: purchase.tokens_purchased,
+    },
+  })
+}
+
 const tokens = new Hono<{ Variables: AuthVariables }>()
+
+/** POST /api/tokens/webhook — mounted in index.ts before `app.route('/api/tokens', …)` so raw body stays intact if global JSON parsers are added. */
+export const handleTokensStripeWebhook = async (c: Context) => {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
+  if (webhookSecret == null || webhookSecret.trim() === '') {
+    console.error('POST /api/tokens/webhook: STRIPE_WEBHOOK_SECRET is not set')
+    return c.json({ error: 'Server configuration error' }, 500)
+  }
+
+  const stripeSignature = c.req.header('stripe-signature')
+  if (stripeSignature == null || stripeSignature === '') {
+    return c.json({ error: 'Missing Stripe-Signature header' }, 400)
+  }
+
+  let rawBody: Buffer
+  try {
+    rawBody = Buffer.from(await c.req.raw.arrayBuffer())
+  } catch (error) {
+    console.error('POST /api/tokens/webhook: failed to read body', error)
+    return c.json({ error: 'Invalid request body' }, 400)
+  }
+
+  let event: Stripe.Event
+  try {
+    event = stripe.webhooks.constructEvent(rawBody, stripeSignature, webhookSecret)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Webhook signature verification failed'
+    console.error('POST /api/tokens/webhook: signature verification failed', message)
+    return c.json({ error: message }, 400)
+  }
+
+  console.info('Stripe webhook received', { type: event.type, id: event.id })
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session
+        const sessionId = session.id
+        console.info('checkout.session.completed', { sessionId })
+
+        await prisma.$transaction(async (tx) => {
+          const purchase = await tx.purchases.findFirst({
+            where: {
+              stripe_checkout_session_id: sessionId,
+              status: 'PENDING',
+            },
+          })
+          if (purchase == null) {
+            console.info('No PENDING purchase for session; skipping credit', { sessionId })
+            return
+          }
+
+          await creditTokensForPurchase(tx, purchase)
+        })
+        break
+      }
+      case 'payment_intent.succeeded': {
+        const pi = event.data.object as Stripe.PaymentIntent
+        const paymentIntentId = pi.id
+        console.info('payment_intent.succeeded', { paymentIntentId })
+
+        await prisma.$transaction(async (tx) => {
+          const purchase = await tx.purchases.findFirst({
+            where: {
+              stripe_payment_intent_id: paymentIntentId,
+              status: 'PENDING',
+            },
+          })
+          if (purchase == null) {
+            console.info('No PENDING purchase for PaymentIntent; skipping credit', { paymentIntentId })
+            return
+          }
+
+          await creditTokensForPurchase(tx, purchase)
+        })
+        break
+      }
+      case 'payment_intent.payment_failed': {
+        const pi = event.data.object as Stripe.PaymentIntent
+        await prisma.purchases.updateMany({
+          where: {
+            stripe_payment_intent_id: pi.id,
+            status: 'PENDING',
+          },
+          data: { status: 'FAILED' },
+        })
+        break
+      }
+      case 'checkout.session.expired': {
+        const session = event.data.object as Stripe.Checkout.Session
+        const sessionId = session.id
+        console.info('checkout.session.expired', { sessionId })
+
+        await prisma.purchases.updateMany({
+          where: {
+            stripe_checkout_session_id: sessionId,
+            status: 'PENDING',
+          },
+          data: { status: 'FAILED' },
+        })
+        break
+      }
+      default:
+        break
+    }
+  } catch (error) {
+    console.error('POST /api/tokens/webhook handler error', {
+      type: event.type,
+      id: event.id,
+      error,
+    })
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+
+  return c.json({ received: true })
+}
 
 // GET /api/tokens/balance
 // Returns current token balance for the authenticated user
@@ -61,23 +201,18 @@ tokens.post('/spend', requireAuth, async (c) => {
 })
 
 // POST /api/tokens/purchase
-// Creates a Stripe Checkout Session and a PENDING purchases row
+// Creates a Stripe PaymentIntent and a PENDING purchases row (PaymentElement + confirmPayment on the client)
 tokens.post('/purchase', requireAuth, async (c) => {
   const userId = c.get('userId')
-  const frontendUrl = process.env.FRONTEND_URL
-  if (frontendUrl == null || frontendUrl.trim() === '') {
-    console.error('POST /api/tokens/purchase: FRONTEND_URL is not set')
-    return c.json({ error: 'Server configuration error' }, 500)
-  }
 
   try {
     const body = await c.req.json()
     const parsed = tokenPurchaseSchema.safeParse(body)
     if (!parsed.success) return c.json({ error: 'Invalid request' }, 400)
 
-    const { packageId } = parsed.data
+    const { bundleId } = parsed.data
     const bundle = await prisma.token_bundles.findFirst({
-      where: { id: packageId, is_active: true },
+      where: { id: bundleId, is_active: true },
     })
     if (!bundle) {
       return c.json({ error: 'Package not found or inactive' }, 404)
@@ -85,15 +220,17 @@ tokens.post('/purchase', requireAuth, async (c) => {
 
     const amountPaidCents = Math.round(Number(bundle.current_price) * 100)
 
-    let session: Stripe.Checkout.Session
+    let paymentIntent: Stripe.PaymentIntent
     try {
-      session = await stripe.checkout.sessions.create({
-        mode: 'payment',
-        line_items: [{ price: bundle.stripe_price_id, quantity: 1 }],
-        client_reference_id: userId,
-        metadata: { packageId, userId },
-        success_url: `${frontendUrl}/tokens?success=true`,
-        cancel_url: `${frontendUrl}/tokens?cancelled=true`,
+      paymentIntent = await stripe.paymentIntents.create({
+        amount: amountPaidCents,
+        currency: 'usd',
+        automatic_payment_methods: { enabled: true },
+        metadata: {
+          bundleId: bundle.id,
+          userId,
+          tokens: String(bundle.tokens),
+        },
       })
     } catch (err) {
       if (err instanceof Stripe.errors.StripeError) {
@@ -103,21 +240,16 @@ tokens.post('/purchase', requireAuth, async (c) => {
       throw err
     }
 
-    if (session.url == null) {
-      console.error('POST /api/tokens/purchase: Checkout Session missing url', session.id)
-      return c.json({ error: 'Could not create checkout session' }, 500)
+    if (paymentIntent.client_secret == null || paymentIntent.client_secret === '') {
+      console.error('POST /api/tokens/purchase: PaymentIntent missing client_secret', paymentIntent.id)
+      return c.json({ error: 'Could not create payment' }, 500)
     }
-
-    const paymentIntentId =
-      typeof session.payment_intent === 'string'
-        ? session.payment_intent
-        : session.payment_intent?.id ?? null
 
     await prisma.purchases.create({
       data: {
         user_id: userId,
-        stripe_checkout_session_id: session.id,
-        stripe_payment_intent_id: paymentIntentId,
+        stripe_checkout_session_id: null,
+        stripe_payment_intent_id: paymentIntent.id,
         bundle_id: bundle.id,
         tokens_purchased: bundle.tokens,
         amount_paid_cents: amountPaidCents,
@@ -125,7 +257,7 @@ tokens.post('/purchase', requireAuth, async (c) => {
       },
     })
 
-    return c.json({ checkoutUrl: session.url })
+    return c.json({ clientSecret: paymentIntent.client_secret })
   } catch (error) {
     console.error('POST /api/tokens/purchase error:', error)
     return c.json({ error: 'Internal server error' }, 500)

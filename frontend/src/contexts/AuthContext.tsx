@@ -13,6 +13,7 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import type { CurrentUser } from '@/lib/constants'
+import { useTokenBalance } from '@/hooks/useTokenBalance'
 
 /**
  * Email confirmation links use an implicit-style hash (#access_token=…).
@@ -164,6 +165,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateTokenBalance = useCallback((newBalance: number) => {
     setCurrentUser(u => (u ? { ...u, tokenBalance: newBalance } : u))
   }, [])
+
+  useTokenBalance(currentUser?.id, updateTokenBalance)
 
   const markEmailVerified = useCallback(() => {
     setCurrentUser(u => (u ? { ...u, emailVerified: true } : u))

@@ -35,7 +35,10 @@ packs.get('/', async (c) => {
 
     const premiumPacks = allPacks
       .filter((p) => !p.is_free)
-      .map(({ questions: _questions, ...rest }) => rest)
+      .map(({ questions, ...rest }) => ({
+        ...rest,
+        round_count: questions.length,
+      }))
 
     return c.json({
       free: freePacks,

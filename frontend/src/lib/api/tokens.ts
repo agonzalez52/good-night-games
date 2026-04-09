@@ -1,6 +1,4 @@
-// Phase 7: implement these fetch helpers
-// Each wraps a backend endpoint with the user's JWT from Supabase session.
-// Usage: import { getTokenBalance } from '@/lib/api/tokens'
+import { createClient } from '@/lib/supabase/client'
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
 
@@ -15,6 +13,40 @@ async function authedFetch(path: string, token: string, options: RequestInit = {
   })
 }
 
+const sleep = (ms: number) => new Promise<void>(resolve => { setTimeout(resolve, ms) })
+
+export interface TokenBundle {
+  id: string
+  name: string
+  tokens: number
+  base_price: number
+  current_price: number
+  stripe_price_id: string
+  is_most_popular: boolean
+  is_active: boolean
+}
+
+function normalizeBundle(row: Record<string, unknown>): TokenBundle {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    tokens: Number(row.tokens),
+    base_price: Number(row.base_price),
+    current_price: Number(row.current_price),
+    stripe_price_id: String(row.stripe_price_id),
+    is_most_popular: Boolean(row.is_most_popular),
+    is_active: Boolean(row.is_active),
+  }
+}
+
+// GET /api/tokens/bundles — public
+export async function getTokenBundles(): Promise<TokenBundle[]> {
+  const res = await fetch(`${BACKEND_URL}/api/tokens/bundles`)
+  if (!res.ok) throw new Error('Failed to fetch bundles')
+  const rows: Record<string, unknown>[] = await res.json()
+  return rows.map(normalizeBundle)
+}
+
 // GET /api/tokens/balance
 export async function getTokenBalance(token: string): Promise<number> {
   const res = await authedFetch('/api/tokens/balance', token)
@@ -23,14 +55,29 @@ export async function getTokenBalance(token: string): Promise<number> {
   return data.balance
 }
 
-// GET /api/tokens/bundles
-export async function getTokenBundles(token: string) {
-  const res = await authedFetch('/api/tokens/bundles', token)
-  if (!res.ok) throw new Error('Failed to fetch bundles')
-  return res.json()
+/** Poll until balance reaches at least `atLeast` (e.g. after Stripe webhook credits tokens). */
+export async function pollTokenBalanceAtLeast(
+  accessToken: string,
+  atLeast: number,
+  options?: { maxAttempts?: number; intervalMs?: number },
+): Promise<number> {
+  const maxAttempts = options?.maxAttempts ?? 30
+  const intervalMs = options?.intervalMs ?? 1000
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const balance = await getTokenBalance(accessToken)
+    if (balance >= atLeast) return balance
+    await sleep(intervalMs)
+  }
+  throw new Error('Timed out waiting for token balance to update')
 }
 
-// POST /api/tokens/spend — Phase 7: call before commitGame for premium packs
+/** Uses the current Supabase session access token (no args). */
+export async function getAccessToken(): Promise<string | null> {
+  const { data: { session } } = await createClient().auth.getSession()
+  return session?.access_token ?? null
+}
+
+// POST /api/tokens/spend
 export async function spendTokens(token: string, amount: number) {
   const res = await authedFetch('/api/tokens/spend', token, {
     method: 'POST',
@@ -40,12 +87,21 @@ export async function spendTokens(token: string, amount: number) {
   return res.json()
 }
 
-// POST /api/tokens/purchase — Phase 7: returns { clientSecret } for Stripe
-export async function createPurchaseIntent(token: string, bundleId: string) {
-  const res = await authedFetch('/api/tokens/purchase', token, {
+// POST /api/tokens/purchase — returns { clientSecret } for Stripe PaymentElement
+export async function createPurchaseIntent(accessToken: string, bundleId: string): Promise<{ clientSecret: string }> {
+  const res = await authedFetch('/api/tokens/purchase', accessToken, {
     method: 'POST',
     body: JSON.stringify({ bundleId }),
   })
-  if (!res.ok) throw new Error('Failed to create purchase intent')
+  if (!res.ok) {
+    let message = 'Failed to create purchase'
+    try {
+      const body = await res.json()
+      if (body?.error && typeof body.error === 'string') message = body.error
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message)
+  }
   return res.json()
 }

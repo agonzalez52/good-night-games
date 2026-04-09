@@ -5,12 +5,14 @@ import { TOKENS_PER_GAME } from '@/lib/constants'
 
 interface SpendConfirmModalProps {
   balance: number
-  onConfirm: () => void
+  onConfirm: () => void | Promise<void>
   onCancel: () => void
   onBuyMore: () => void
+  confirmLoading?: boolean
+  errorMessage?: string | null
 }
 
-export default function SpendConfirmModal({ balance, onConfirm, onCancel, onBuyMore }: SpendConfirmModalProps) {
+export default function SpendConfirmModal({ balance, onConfirm, onCancel, onBuyMore, confirmLoading = false, errorMessage = null }: SpendConfirmModalProps) {
   const insufficient = balance < TOKENS_PER_GAME
 
   return (
@@ -38,8 +40,18 @@ export default function SpendConfirmModal({ balance, onConfirm, onCancel, onBuyM
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 24 }}>
               This game costs <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>{TOKENS_PER_GAME} tokens</span>. Your balance after: <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>{balance - TOKENS_PER_GAME}</span>.
             </div>
-            <button onClick={onConfirm} style={{ width: '100%', padding: '13px', borderRadius: 12, background: 'linear-gradient(135deg,#F0A500,#C07A00)', color: '#fff', fontFamily: 'var(--font-display)', fontSize: 15, letterSpacing: '0.08em', border: 'none', boxShadow: '0 4px 18px rgba(240,165,0,0.35)', marginBottom: 10 }}>
-              ▶ START GAME
+            {errorMessage && (
+              <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: '#FF4D6A', marginBottom: 12, lineHeight: 1.5 }}>{errorMessage}</div>
+            )}
+            <button
+              onClick={() => void onConfirm()}
+              disabled={confirmLoading}
+              style={{
+                width: '100%', padding: '13px', borderRadius: 12, background: 'linear-gradient(135deg,#F0A500,#C07A00)', color: '#fff', fontFamily: 'var(--font-display)', fontSize: 15, letterSpacing: '0.08em', border: 'none', boxShadow: '0 4px 18px rgba(240,165,0,0.35)', marginBottom: 10,
+                opacity: confirmLoading ? 0.55 : 1, cursor: confirmLoading ? 'wait' : 'pointer',
+              }}
+            >
+              {confirmLoading ? 'LOADING…' : '▶ START GAME'}
             </button>
             <button onClick={onCancel} style={{ width: '100%', padding: '11px', borderRadius: 12, background: 'transparent', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', fontSize: 13, border: '1px solid rgba(255,255,255,0.08)' }}>
               Cancel

@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import TokenSVG from '@/components/shared/TokenSVG'
 import AuthModal from '@/components/shared/AuthModal'
-import { FREE_PACKS, PREMIUM_PACKS } from '@/lib/constants'
 import type { CurrentUser, CustomSurvey, CustomCollection } from '@/lib/constants'
+import type { SurveyPackFreeListItem, SurveyPackPremiumListItem } from '@/lib/api/survey-showdown/packs'
 
 const isMockMode = process.env.NEXT_PUBLIC_MOCK_MODE === 'true'
 
@@ -51,16 +51,18 @@ interface SurveyPackPickerProps {
   open: boolean
   customSurveys: CustomSurvey[]
   customCollections: CustomCollection[]
+  catalogFree: SurveyPackFreeListItem[]
+  catalogPremium: SurveyPackPremiumListItem[]
 }
 
-export function SurveyPackPicker({ selectedPackId, onToggle, triggerRef, open, customSurveys, customCollections }: SurveyPackPickerProps) {
+export function SurveyPackPicker({ selectedPackId, onToggle, triggerRef, open, customSurveys, customCollections, catalogFree, catalogPremium }: SurveyPackPickerProps) {
   function getLabel(id: string) {
     if (id === 'random') return '🎲 Random Mix'
     if (id === 'custom_all') return '✏ All Custom Surveys'
     const coll = customCollections.find(c => c.id === id)
     if (coll) return `✏ ${coll.name}`
-    const fp = FREE_PACKS.find(p => p.id === id); if (fp) return fp.name
-    const pp = PREMIUM_PACKS.find(p => p.id === id); if (pp) return pp.name
+    const fp = catalogFree.find(p => p.id === id); if (fp) return fp.name
+    const pp = catalogPremium.find(p => p.id === id); if (pp) return pp.name
     return 'Select Surveys'
   }
   return (
@@ -81,11 +83,13 @@ interface SurveyPackDropdownProps {
   currentUser: CurrentUser | null
   customSurveys: CustomSurvey[]
   customCollections: CustomCollection[]
+  catalogFree: SurveyPackFreeListItem[]
+  catalogPremium: SurveyPackPremiumListItem[]
   dropdownPos: { top: number; left: number; width: number }
   panelRef: React.RefObject<HTMLDivElement | null>
 }
 
-export function SurveyPackDropdown({ selectedPackId, onSelectPack, onClose, currentUser, customSurveys, customCollections, dropdownPos, panelRef }: SurveyPackDropdownProps) {
+export function SurveyPackDropdown({ selectedPackId, onSelectPack, onClose, currentUser, customSurveys, customCollections, catalogFree, catalogPremium, dropdownPos, panelRef }: SurveyPackDropdownProps) {
   const balance = currentUser?.tokenBalance || 0
   const isPremiumLocked = !currentUser || (currentUser && balance === 0)
 
@@ -121,12 +125,12 @@ export function SurveyPackDropdown({ selectedPackId, onSelectPack, onClose, curr
         )}
       </>)}
       {sectionLabel('Free')}
-      {FREE_PACKS.map(p => row(p.id, p.name, p.description, false))}
+      {catalogFree.map(p => row(p.id, p.name, p.description, false))}
       {sectionLabel('Tokens Required')}
       {row('random', '🎲 Random Mix', 'Draw from all available surveys', isPremiumLocked,
         <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}><TokenSVG size={14} /></span>
       )}
-      {PREMIUM_PACKS.map(p => row(p.id, p.name, p.description, isPremiumLocked,
+      {catalogPremium.map(p => row(p.id, p.name, p.description, isPremiumLocked,
         <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}><TokenSVG size={14} /></span>
       ))}
     </div>

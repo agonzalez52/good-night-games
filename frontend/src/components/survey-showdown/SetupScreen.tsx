@@ -13,12 +13,19 @@ import { FeedbackModal, ReferralModal, GameHistoryModal } from '@/components/sur
 import CustomSurveysModal from '@/components/survey-showdown/CustomSurveysModal'
 import AuthModal from '@/components/shared/AuthModal'
 import TokenSVG from '@/components/shared/TokenSVG'
-import { FREE_PACKS, TOKENS_PER_GAME } from '@/lib/constants'
+import { TOKENS_PER_GAME } from '@/lib/constants'
 import type { CurrentUser, CustomSurvey, CustomCollection, Round, GameHistoryRecord } from '@/lib/constants'
+import type { SurveyPackFreeListItem, SurveyPackPremiumListItem } from '@/lib/api/survey-showdown/packs'
 
 interface SetupScreenProps {
   onStart: (team1: string, team2: string, timerSecs: number, numRounds: number) => void
   packRounds: Round[]
+  /** Premium list `round_count` when `packRounds` is empty until GET .../rounds */
+  setupRoundCountCap: number
+  packsLoading: boolean
+  packsError: string | null
+  catalogFree: SurveyPackFreeListItem[]
+  catalogPremium: SurveyPackPremiumListItem[]
   /** True while Supabase session + backend profile are still resolving on first load */
   authLoading?: boolean
   currentUser: CurrentUser | null
@@ -40,7 +47,8 @@ interface SetupScreenProps {
 }
 
 export default function SetupScreen({
-  onStart, packRounds, authLoading = false, currentUser, onSignIn, onSignOut, onTokensUpdated,
+  onStart, packRounds, setupRoundCountCap, packsLoading, packsError, catalogFree, catalogPremium,
+  authLoading = false, currentUser, onSignIn, onSignOut, onTokensUpdated,
   onOpenPurchaseModal, selectedPackId, onSelectPack,
   customSurveys, customCollections, onSaveSurvey, onDeleteSurvey,
   onSaveCollection, onDeleteCollection, onCloseSurveys,
@@ -49,7 +57,7 @@ export default function SetupScreen({
   const [team1, setTeam1] = useState('TEAM 1')
   const [team2, setTeam2] = useState('TEAM 2')
   const [timerSecs, setTimerSecs] = useState(5)
-  const [numRounds, setNumRounds] = useState(Math.min(packRounds.length, 5))
+  const [numRounds, setNumRounds] = useState(5)
   const [showCustomSurveys, setShowCustomSurveys] = useState(false)
   const [showHowToPlay, setShowHowToPlay] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
@@ -62,9 +70,9 @@ export default function SetupScreen({
   const dropdownPanelRef = useRef<HTMLDivElement>(null)
   const screenRef = useRef<HTMLDivElement>(null)
   const timerOptions = [3, 5, 10]
-  const maxRounds = packRounds.length
+  const maxRounds = Math.max(packRounds.length, setupRoundCountCap, 1)
 
-  useEffect(() => { setNumRounds(n => Math.min(n, packRounds.length)) }, [packRounds.length])
+  useEffect(() => { setNumRounds(n => Math.min(n, maxRounds)) }, [maxRounds])
 
   useEffect(() => {
     function h(e: MouseEvent) {
@@ -86,7 +94,14 @@ export default function SetupScreen({
   }
 
   const showVerifyBanner = currentUser && !currentUser.emailVerified
-  const isPremium = !FREE_PACKS.some(p => p.id === selectedPackId)
+  const isPremium = !catalogFree.some(p => p.id === selectedPackId)
+  const hasSurveySource =
+    packRounds.length > 0 ||
+    setupRoundCountCap > 0 ||
+    (selectedPackId === 'custom_all' && customSurveys.length > 0) ||
+    (customCollections.some(c => c.id === selectedPackId) &&
+      customSurveys.some(s => s.collectionId === selectedPackId))
+  const canStart = !packsLoading && hasSurveySource
 
   return (
     <div ref={screenRef} style={{ minHeight: '100vh', background: 'radial-gradient(ellipse 80% 60% at 50% -10%,rgba(77,126,255,0.12) 0%,transparent 70%),#060914', display: 'flex', flexDirection: 'column', fontFamily: 'var(--font-body)', position: 'relative' }}>
@@ -128,6 +143,12 @@ export default function SetupScreen({
         {/* Setup card column */}
         <div style={{ width: 'min(540px,100%)', display: 'flex', flexDirection: 'column', gap: 10, animation: 'slideUp 0.5s 0.1s ease-out both' }}>
 
+          {packsError && (
+            <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(255,77,106,0.12)', border: '1px solid rgba(255,77,106,0.25)', fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              {packsError}
+            </div>
+          )}
+
           {/* Team Names */}
           <div style={{ display: 'flex', gap: 10 }}>
             {[{ val: team1, set: setTeam1, label: 'Team 1' }, { val: team2, set: setTeam2, label: 'Team 2' }].map(({ val, set, label }, i) => (
@@ -146,7 +167,11 @@ export default function SetupScreen({
           {/* Survey Pack */}
           <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '14px 16px' }}>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 9, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase', marginBottom: 8 }}>🎯 Survey Pack</div>
-            <SurveyPackPicker selectedPackId={selectedPackId} onToggle={togglePicker} triggerRef={pickerTriggerRef} open={pickerOpen} customSurveys={customSurveys} customCollections={customCollections} />
+            <SurveyPackPicker
+              selectedPackId={selectedPackId} onToggle={togglePicker} triggerRef={pickerTriggerRef} open={pickerOpen}
+              customSurveys={customSurveys} customCollections={customCollections}
+              catalogFree={catalogFree} catalogPremium={catalogPremium}
+            />
           </div>
 
           {/* Rounds + Timer */}
@@ -187,8 +212,14 @@ export default function SetupScreen({
           </div>
 
           {/* Start Game */}
-          <button onClick={() => onStart(team1 || 'TEAM 1', team2 || 'TEAM 2', timerSecs, numRounds)}
-            style={{ width: '100%', padding: '16px 24px', borderRadius: 14, fontSize: 20, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.1em', background: 'linear-gradient(135deg,#F0A500 0%,#C07A00 100%)', color: '#fff', border: 'none', boxShadow: '0 6px 28px rgba(240,165,0,0.4),inset 0 1px 0 rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <button
+            onClick={() => onStart(team1 || 'TEAM 1', team2 || 'TEAM 2', timerSecs, numRounds)}
+            disabled={!canStart}
+            style={{
+              width: '100%', padding: '16px 24px', borderRadius: 14, fontSize: 20, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.1em', background: 'linear-gradient(135deg,#F0A500 0%,#C07A00 100%)', color: '#fff', border: 'none', boxShadow: '0 6px 28px rgba(240,165,0,0.4),inset 0 1px 0 rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              opacity: canStart ? 1 : 0.38, cursor: canStart ? 'pointer' : 'not-allowed',
+            }}
+          >
             <span>▶ START GAME</span>
             {isPremium && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, opacity: 0.85, borderLeft: '1px solid rgba(255,255,255,0.3)', paddingLeft: 10, fontSize: 14 }}>
@@ -209,6 +240,7 @@ export default function SetupScreen({
         <SurveyPackDropdown
           selectedPackId={selectedPackId} onSelectPack={onSelectPack} onClose={() => setPickerOpen(false)}
           currentUser={currentUser} customSurveys={customSurveys} customCollections={customCollections}
+          catalogFree={catalogFree} catalogPremium={catalogPremium}
           dropdownPos={dropdownPos} panelRef={dropdownPanelRef}
         />
       )}

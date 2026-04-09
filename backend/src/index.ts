@@ -4,7 +4,7 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 
 import bundles from './routes/bundles'
-import tokens from './routes/tokens'
+import tokens, { handleTokensStripeWebhook } from './routes/tokens'
 import auth from './routes/auth'
 import referrals from './routes/referrals'
 import feedback from './routes/feedback'
@@ -27,6 +27,9 @@ app.use(
 
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok' }))
+
+// Stripe tokens webhook — raw body for signature verification; register before any global JSON body parser
+app.post('/api/tokens/webhook', handleTokensStripeWebhook)
 
 // Product-level routes
 app.route('/api/tokens/bundles', bundles)

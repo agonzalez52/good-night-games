@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import SetupScreen from '@/components/survey-showdown/SetupScreen'
@@ -11,11 +11,19 @@ import AuthModal from '@/components/shared/AuthModal'
 import TokenPurchaseModal from '@/components/shared/TokenPurchaseModal'
 import SpendConfirmModal from '@/components/shared/SpendConfirmModal'
 import { ConversionModal } from '@/components/survey-showdown/SetupHeader'
+import { createClient } from '@/lib/supabase/client'
 import {
-  FREE_PACKS, PREMIUM_PACKS, TOKENS_PER_GAME,
-  resolvePackRounds, shuffleArray, playCoinCollect,
+  getPacks,
+  getPackRounds,
+  mergeSurveyPacksForGame,
+  type GetPacksResponse,
+} from '@/lib/api/survey-showdown/packs'
+import { spendTokens } from '@/lib/api/tokens'
+import {
+  TOKENS_PER_GAME, resolvePackRounds,
+  shuffleArray, playCoinCollect,
 } from '@/lib/constants'
-import type { CurrentUser, CustomSurvey, CustomCollection, GameHistoryRecord } from '@/lib/constants'
+import type { CurrentUser, CustomSurvey, CustomCollection, GameHistoryRecord, Round } from '@/lib/constants'
 
 interface FlyingCoin {
   id: number
@@ -62,8 +70,16 @@ export default function SurveyShowdownApp() {
   const [shuffledRounds, setShuffledRounds] = useState<ReturnType<typeof resolvePackRounds>>([])
   const [apiKey] = useState('') // Phase 8: remove entirely — judge moves to backend
 
+  // Pack catalog (GET /api/survey-showdown/packs) + cached premium rounds after auth fetch
+  const [packs, setPacks] = useState<GetPacksResponse | null>(null)
+  const [packsLoading, setPacksLoading] = useState(true)
+  const [packsError, setPacksError] = useState<string | null>(null)
+  const [premiumRoundsCache, setPremiumRoundsCache] = useState<Record<string, Round[]>>({})
+  const [spendConfirmLoading, setSpendConfirmLoading] = useState(false)
+  const [spendConfirmError, setSpendConfirmError] = useState<string | null>(null)
+
   // Pack selection & custom surveys
-  const [selectedPackId, setSelectedPackId] = useState('free_classic')
+  const [selectedPackId, setSelectedPackId] = useState('')
   const [customSurveys, setCustomSurveys] = useState<CustomSurvey[]>([])
   const [customCollections, setCustomCollections] = useState<CustomCollection[]>([])
   const [isTokenGame, setIsTokenGame] = useState(false)
@@ -79,8 +95,44 @@ export default function SurveyShowdownApp() {
   const [showSignInGate, setShowSignInGate] = useState(false)
   const [freeGamesPlayed, setFreeGamesPlayed] = useState(0)
 
-  // Derived
-  const packRounds = resolvePackRounds(selectedPackId, customSurveys, customCollections)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        setPacksLoading(true)
+        setPacksError(null)
+        const data = await getPacks()
+        if (!cancelled) setPacks(data)
+      } catch {
+        if (!cancelled) setPacksError('Could not load survey packs. Check your connection and try again.')
+      } finally {
+        if (!cancelled) setPacksLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!packs?.free?.length || selectedPackId) return
+    setSelectedPackId(packs.free[0].id)
+  }, [packs, selectedPackId])
+
+  const mergedSurveyPacks = useMemo(
+    () => mergeSurveyPacksForGame(packs?.free ?? [], packs?.premium ?? [], premiumRoundsCache),
+    [packs?.free, packs?.premium, premiumRoundsCache]
+  )
+
+  const packRounds = useMemo(
+    () => resolvePackRounds(selectedPackId, customSurveys, customCollections, mergedSurveyPacks),
+    [selectedPackId, customSurveys, customCollections, mergedSurveyPacks]
+  )
+
+  const selectedPremiumMeta = packs?.premium.find(p => p.id === selectedPackId)
+  const setupRoundCountCap = selectedPremiumMeta?.round_count ?? 0
+
+  const freePackIds = packs?.free ?? []
+  const premiumPackIds = packs?.premium ?? []
+
   const activeRounds = shuffledRounds.length ? shuffledRounds : packRounds.slice(0, numRounds)
 
   function handleSignIn(user: CurrentUser) {
@@ -88,8 +140,14 @@ export default function SurveyShowdownApp() {
   }
   async function handleSignOut() {
     await signOut()
-    const isCustom = !FREE_PACKS.some(p => p.id === selectedPackId) && !PREMIUM_PACKS.some(p => p.id === selectedPackId) && selectedPackId !== 'random'
-    if (isCustom) setSelectedPackId('free_classic')
+    const isBuiltin =
+      freePackIds.some(p => p.id === selectedPackId) ||
+      premiumPackIds.some(p => p.id === selectedPackId) ||
+      selectedPackId === 'random'
+    if (!isBuiltin) {
+      const fallback = freePackIds[0]?.id ?? ''
+      setSelectedPackId(fallback)
+    }
   }
   function handleTokensUpdated(newBalance: number) {
     updateTokenBalance(newBalance)
@@ -125,17 +183,19 @@ export default function SurveyShowdownApp() {
   }
 
   function handleSurveysModalClose() {
-    const isBuiltIn = FREE_PACKS.some(p => p.id === selectedPackId) || PREMIUM_PACKS.some(p => p.id === selectedPackId) || selectedPackId === 'random'
+    const isBuiltIn =
+      freePackIds.some(p => p.id === selectedPackId) ||
+      premiumPackIds.some(p => p.id === selectedPackId) ||
+      selectedPackId === 'random'
     if (isBuiltIn) return
     const hasOwnContent =
       selectedPackId === 'custom_all'
         ? customSurveys.length > 0
         : customCollections.some(c => c.id === selectedPackId) && customSurveys.some(s => s.collectionId === selectedPackId)
-    if (!hasOwnContent) setSelectedPackId('free_classic')
+    if (!hasOwnContent) setSelectedPackId(freePackIds[0]?.id ?? '')
   }
 
-  // Token purchase — Phase 7: replace mock setTimeout with Stripe PaymentIntent flow
-  function handlePurchase(tokenAmount: number) {
+  function handlePurchase(_tokensAdded: number, newBalance: number) {
     setShowPurchaseModal(false)
     const pillEl = document.querySelector('[data-token-pill]')
     const pillRect = pillEl?.getBoundingClientRect()
@@ -156,33 +216,87 @@ export default function SurveyShowdownApp() {
     playCoinCollect(COIN_COUNT)
     const lastCoinLands = COIN_DURATION + (COIN_COUNT - 1) * STAGGER + 80
     setTimeout(() => {
-      patchUser(u => ({ ...u, tokenBalance: (u.tokenBalance || 0) + tokenAmount }))
+      updateTokenBalance(newBalance)
       setFlyingCoins([])
     }, lastCoinLands)
   }
 
   // Game lifecycle
-  // Phase 7: call POST /api/tokens/spend { amount: TOKENS_PER_GAME } before setScreen('faceoff')
-  function commitGame(t1: string, t2: string, secs: number, nr: number, usedTokens: boolean) {
+  async function commitGame(t1: string, t2: string, secs: number, nr: number, usedTokens: boolean) {
+    if (!packs) return
     if (usedTokens) {
-      patchUser(u => ({ ...u, tokenBalance: Math.max(0, (u.tokenBalance || 0) - TOKENS_PER_GAME) }))
+      setSpendConfirmError(null)
+      setSpendConfirmLoading(true)
     }
-    if (!usedTokens && !currentUser) { setFreeGamesPlayed(n => n + 1) }
-    setIsTokenGame(!!usedTokens)
-    setTeams([{ name: t1, score: 0 }, { name: t2, score: 0 }])
-    setTimerSecs(secs); setNumRounds(nr); setCurrentRound(0)
-    setShuffledRounds(shuffleArray(packRounds).slice(0, nr))
-    setScreen('faceoff')
-    setPendingGame(null)
+    try {
+      let cache = { ...premiumRoundsCache }
+      const needsPremiumFetch =
+        (selectedPackId === 'random' && packs.premium.some(p => !cache[p.id]?.length)) ||
+        (packs.premium.some(p => p.id === selectedPackId) && !cache[selectedPackId]?.length)
+
+      if (needsPremiumFetch) {
+        const { data: { session } } = await createClient().auth.getSession()
+        const token = session?.access_token
+        if (!token) {
+          if (usedTokens) setSpendConfirmError('Sign in required to load this pack.')
+          return
+        }
+        if (selectedPackId === 'random') {
+          for (const p of packs.premium) {
+            if (cache[p.id]?.length) continue
+            const { rounds } = await getPackRounds(p.id, token)
+            cache[p.id] = rounds
+          }
+        } else if (packs.premium.some(p => p.id === selectedPackId) && !cache[selectedPackId]?.length) {
+          const { rounds } = await getPackRounds(selectedPackId, token)
+          cache = { ...cache, [selectedPackId]: rounds }
+        }
+        setPremiumRoundsCache(cache)
+      }
+
+      const merged = mergeSurveyPacksForGame(packs.free, packs.premium, cache)
+      const fullRounds = resolvePackRounds(selectedPackId, customSurveys, customCollections, merged)
+      if (!fullRounds.length) {
+        if (usedTokens) setSpendConfirmError('No questions available for this pack.')
+        return
+      }
+
+      if (usedTokens) {
+        const { data: { session } } = await createClient().auth.getSession()
+        const accessToken = session?.access_token
+        if (!accessToken) {
+          setSpendConfirmError('Sign in required to spend tokens.')
+          return
+        }
+        try {
+          const spendResult = await spendTokens(accessToken, TOKENS_PER_GAME) as { balance: number }
+          handleTokensUpdated(spendResult.balance)
+        } catch {
+          setSpendConfirmError('Could not spend tokens. Check your balance and try again.')
+          return
+        }
+      }
+      if (!usedTokens && !currentUser) { setFreeGamesPlayed(n => n + 1) }
+      setIsTokenGame(!!usedTokens)
+      setTeams([{ name: t1, score: 0 }, { name: t2, score: 0 }])
+      setTimerSecs(secs); setNumRounds(nr); setCurrentRound(0)
+      setShuffledRounds(shuffleArray(fullRounds).slice(0, nr))
+      setScreen('faceoff')
+      setPendingGame(null)
+    } catch {
+      if (usedTokens) setSpendConfirmError('Could not load pack questions. Try again.')
+    } finally {
+      if (usedTokens) setSpendConfirmLoading(false)
+    }
   }
 
   function startGame(t1: string, t2: string, secs: number, nr: number) {
-    const isFreePack = FREE_PACKS.some(p => p.id === selectedPackId)
+    const isFreePack = freePackIds.some(p => p.id === selectedPackId)
     if (!currentUser) {
-      if (isFreePack) { commitGame(t1, t2, secs, nr, false); return }
+      if (isFreePack) { void commitGame(t1, t2, secs, nr, false); return }
       setConversionReason('premium'); setShowConversionModal(true); return
     }
-    if (isFreePack) { commitGame(t1, t2, secs, nr, false); return }
+    if (isFreePack) { void commitGame(t1, t2, secs, nr, false); return }
     setPendingGame({ t1, t2, secs, nr })
   }
 
@@ -209,8 +323,8 @@ export default function SurveyShowdownApp() {
   function getPackName(id: string) {
     if (id === 'random') return 'Random Mix'
     if (id === 'custom_all') return 'All Custom'
-    const fp = FREE_PACKS.find(p => p.id === id); if (fp) return fp.name
-    const pp = PREMIUM_PACKS.find(p => p.id === id); if (pp) return pp.name
+    const fp = freePackIds.find(p => p.id === id); if (fp) return fp.name
+    const pp = premiumPackIds.find(p => p.id === id); if (pp) return pp.name
     const coll = customCollections.find(c => c.id === id); if (coll) return coll.name
     return 'Custom'
   }
@@ -243,6 +357,11 @@ export default function SurveyShowdownApp() {
       {screen === 'setup' && (
         <SetupScreen
           onStart={startGame} packRounds={packRounds}
+          setupRoundCountCap={setupRoundCountCap}
+          packsLoading={packsLoading}
+          packsError={packsError}
+          catalogFree={freePackIds}
+          catalogPremium={premiumPackIds}
           authLoading={authLoading}
           currentUser={currentUser} onSignIn={handleSignIn} onSignOut={handleSignOut}
           onTokensUpdated={handleTokensUpdated} onOpenPurchaseModal={() => setShowPurchaseModal(true)}
@@ -315,8 +434,10 @@ export default function SurveyShowdownApp() {
         <SpendConfirmModal
           balance={currentUser?.tokenBalance || 0}
           onConfirm={() => commitGame(pendingGame.t1, pendingGame.t2, pendingGame.secs, pendingGame.nr, true)}
-          onCancel={() => setPendingGame(null)}
-          onBuyMore={() => { setPendingGame(null); setShowPurchaseModal(true) }}
+          onCancel={() => { setSpendConfirmError(null); setPendingGame(null) }}
+          onBuyMore={() => { setSpendConfirmError(null); setPendingGame(null); setShowPurchaseModal(true) }}
+          confirmLoading={spendConfirmLoading}
+          errorMessage={spendConfirmError}
         />
       )}
     </>

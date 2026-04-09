@@ -4,9 +4,9 @@ export const spendTokensSchema = z.object({
   amount: z.number().int().positive(),
 })
 
-/** POST /api/tokens/purchase — `packageId` is token_bundles.id */
+/** POST /api/tokens/purchase — `bundleId` is token_bundles.id */
 export const tokenPurchaseSchema = z.object({
-  packageId: z.string().uuid(),
+  bundleId: z.string().uuid(),
 })
 
 export const createSurveySchema = z.object({
