@@ -4,7 +4,7 @@ import { prisma } from '../../lib/prisma'
 import { requireAuth, AuthVariables } from '../../middleware/auth'
 import { mapQuestionsToRounds } from './map-survey-rounds'
 
-const packs = new Hono<{ Variables: AuthVariables }>()
+const surveyPacks = new Hono<{ Variables: AuthVariables }>()
 
 const packListInclude = {
   questions: {
@@ -18,7 +18,7 @@ const packListInclude = {
 // GET /api/survey-showdown/packs
 // Public — no auth required for free packs
 // Returns { free: Pack[], premium: Pack[] }
-packs.get('/', async (c) => {
+surveyPacks.get('/', async (c) => {
   try {
     const allPacks = await prisma.survey_packs.findMany({
       where: { is_active: true },
@@ -53,7 +53,7 @@ packs.get('/', async (c) => {
 // GET /api/survey-showdown/packs/:id/rounds
 // Protected — only callable after tokens have been spent
 // Returns the rounds for a single pack
-packs.get('/:id/rounds', requireAuth, async (c) => {
+surveyPacks.get('/:id/rounds', requireAuth, async (c) => {
   const id = c.req.param('id')
   try {
     const pack = await prisma.survey_packs.findUnique({
@@ -68,4 +68,4 @@ packs.get('/:id/rounds', requireAuth, async (c) => {
   }
 })
 
-export default packs
+export default surveyPacks

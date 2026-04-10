@@ -15,7 +15,7 @@ import AuthModal from '@/components/shared/AuthModal'
 import TokenSVG from '@/components/shared/TokenSVG'
 import { TOKENS_PER_GAME } from '@/lib/constants'
 import type { CurrentUser, CustomSurvey, CustomCollection, Round, GameHistoryRecord } from '@/lib/constants'
-import type { SurveyPackFreeListItem, SurveyPackPremiumListItem } from '@/lib/api/survey-showdown/packs'
+import type { SurveyPackFreeListItem, SurveyPackPremiumListItem } from '@/lib/api/survey-showdown/survey-packs'
 
 interface SetupScreenProps {
   onStart: (team1: string, team2: string, timerSecs: number, numRounds: number) => void

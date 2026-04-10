@@ -17,7 +17,7 @@ import {
   getPackRounds,
   mergeSurveyPacksForGame,
   type GetPacksResponse,
-} from '@/lib/api/survey-showdown/packs'
+} from '@/lib/api/survey-showdown/survey-packs'
 import { spendTokens } from '@/lib/api/tokens'
 import {
   TOKENS_PER_GAME, resolvePackRounds,

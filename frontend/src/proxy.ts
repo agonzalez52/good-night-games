@@ -6,7 +6,7 @@ import type { NextRequest } from 'next/server'
  * Browser shows the native Basic prompt; credentials apply to this origin only.
  * Does not protect a separate API origin — use network rules or backend auth there if needed.
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const password = process.env.STAGING_PASSWORD
   if (!password) return NextResponse.next()
 

@@ -9,7 +9,7 @@ import tokens, { handleTokensStripeWebhook } from './routes/tokens'
 import auth from './routes/auth'
 import referrals from './routes/referrals'
 import feedback from './routes/feedback'
-import packs from './routes/survey-showdown/packs'
+import surveyPacks from './routes/survey-showdown/survey-packs'
 import customSurveys from './routes/survey-showdown/custom-surveys'
 import judge from './routes/survey-showdown/judge'
 import history from './routes/survey-showdown/history'
@@ -41,7 +41,7 @@ app.route('/api/referrals', referrals)
 app.route('/api/feedback', feedback)
 
 // Survey Showdown routes
-app.route('/api/survey-showdown/packs', packs)
+app.route('/api/survey-showdown/packs', surveyPacks)
 app.route('/api/survey-showdown/custom-surveys', customSurveys)
 app.route('/api/survey-showdown/judge', judge)
 app.route('/api/survey-showdown/history', history)

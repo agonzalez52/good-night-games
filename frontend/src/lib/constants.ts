@@ -4,7 +4,7 @@ export const MAX_CUSTOM_SURVEYS = 40;
 
 // ─── SURVEY PACKS ─────────────────────────────────────────────────────────────
 // Catalog + rounds come from GET /api/survey-showdown/packs and mergeSurveyPacksForGame
-// (see frontend/src/lib/api/survey-showdown/packs.ts). Premium `rounds` load via GET .../packs/:id/rounds.
+// (see frontend/src/lib/api/survey-showdown/survey-packs.ts). Premium `rounds` load via GET .../packs/:id/rounds.
 // Round: { question: string, answers: { text: string, points: number }[] }
 
 export type Answer = { text: string; points: number };
