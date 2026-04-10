@@ -57,7 +57,7 @@ export default function SurveyShowdownApp() {
     if (searchParams.get('recovery') !== 'true') return
     recoveryOpened.current = true
     setShowRecoveryModal(true)
-    router.replace('/games/survey-showdown', { scroll: false })
+    router.replace('/survey-showdown', { scroll: false })
   }, [searchParams, router])
 
   const [screen, setScreen] = useState<'setup' | 'faceoff' | 'board'>('setup')

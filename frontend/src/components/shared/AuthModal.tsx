@@ -117,7 +117,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
       password,
       options: {
         data: { username: username || email.split('@')[0] },
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/games/survey-showdown`,
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/survey-showdown`,
       },
     })
     if (signUpError) {
@@ -207,7 +207,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
     const { error: otpError } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/games/survey-showdown`,
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/survey-showdown`,
       },
     })
     setLoading(false)
@@ -247,7 +247,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
       return
     }
     const supabase = createClient()
-    const recoveryNext = encodeURIComponent('/games/survey-showdown?recovery=true')
+    const recoveryNext = encodeURIComponent('/survey-showdown?recovery=true')
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/auth/callback?next=${recoveryNext}`,
     })

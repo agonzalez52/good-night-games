@@ -10,7 +10,7 @@ import type { NextRequest } from 'next/server'
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/games/survey-showdown'
+  const next = searchParams.get('next') ?? '/survey-showdown'
 
   if (code) {
     const cookieStore = await cookies()
@@ -37,5 +37,5 @@ export async function GET(request: NextRequest) {
   }
 
   // Auth failed — redirect to game with error param so the app can surface a message
-  return NextResponse.redirect(`${origin}/games/survey-showdown?error=auth_failed`)
+  return NextResponse.redirect(`${origin}/survey-showdown?error=auth_failed`)
 }
