@@ -595,14 +595,6 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
                   onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none' }} />
               </div>
             )}
-            <div>
-              <label style={labelStyle}>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" style={fieldStyle}
-                onFocus={e => { e.target.style.borderColor = 'rgba(77,126,255,0.5)'; e.target.style.boxShadow = '0 0 0 3px rgba(77,126,255,0.1)' }}
-                onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none' }}
-                onKeyDown={e => { if (e.key === 'Enter' && !isSignUp && signinMethod === 'magic') handleMagicLink() }} />
-            </div>
-
             {!isSignUp && (
               <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.09)', background: 'rgba(255,255,255,0.03)' }}>
                 {[{ id: 'password', label: 'Password' }, { id: 'magic', label: '✉ Magic Link' }].map(opt => (
@@ -613,6 +605,13 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
                 ))}
               </div>
             )}
+            <div>
+              <label style={labelStyle}>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" style={fieldStyle}
+                onFocus={e => { e.target.style.borderColor = 'rgba(77,126,255,0.5)'; e.target.style.boxShadow = '0 0 0 3px rgba(77,126,255,0.1)' }}
+                onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none' }}
+                onKeyDown={e => { if (e.key === 'Enter' && !isSignUp && signinMethod === 'magic') handleMagicLink() }} />
+            </div>
 
             {(isSignUp || signinMethod === 'password') && (
               <div>
