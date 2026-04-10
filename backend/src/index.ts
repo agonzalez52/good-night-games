@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 
+import { stagingOriginGuard } from './middleware/staging-origin-guard'
 import bundles from './routes/bundles'
 import tokens, { handleTokensStripeWebhook } from './routes/tokens'
 import auth from './routes/auth'
@@ -24,6 +25,7 @@ app.use(
     allowHeaders: ['Content-Type', 'Authorization'],
   })
 )
+app.use('*', stagingOriginGuard)
 
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok' }))
