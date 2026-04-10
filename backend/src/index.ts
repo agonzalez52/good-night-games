@@ -4,7 +4,7 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 
 import { stagingOriginGuard } from './middleware/staging-origin-guard'
-import bundles from './routes/bundles'
+import tokenBundles from './routes/token-bundles'
 import tokens, { handleTokensStripeWebhook } from './routes/tokens'
 import auth from './routes/auth'
 import referrals from './routes/referrals'
@@ -34,7 +34,7 @@ app.get('/health', (c) => c.json({ status: 'ok' }))
 app.post('/api/tokens/webhook', handleTokensStripeWebhook)
 
 // Product-level routes
-app.route('/api/tokens/bundles', bundles)
+app.route('/api/tokens/bundles', tokenBundles)
 app.route('/api/tokens', tokens)
 app.route('/api/auth', auth)
 app.route('/api/referrals', referrals)

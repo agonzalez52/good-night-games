@@ -1,12 +1,12 @@
 import { Hono } from 'hono'
 import { prisma } from '../lib/prisma'
 
-const bundles = new Hono()
+const tokenBundles = new Hono()
 
 // GET /api/tokens/bundles
 // Public — no auth required
 // Returns active bundles sorted by base_price ASC
-bundles.get('/', async (c) => {
+tokenBundles.get('/', async (c) => {
   try {
     const rows = await prisma.token_bundles.findMany({
       where: { is_active: true },
@@ -19,4 +19,4 @@ bundles.get('/', async (c) => {
   }
 })
 
-export default bundles
+export default tokenBundles
