@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import GameMenu from '@/components/survey-showdown/GameMenu'
 import { AdBanner } from '@/components/survey-showdown/AdBanner'
 import { judgeAnswer, playBuzz, playReveal, playTick } from '@/lib/constants'
-import type { Round } from '@/lib/constants'
+import type { Answer, Round } from '@/lib/constants'
 
 interface Team { name: string; score: number }
 interface GameMenuProps { timerSecs: number; onTimerChange: (s: number) => void; onNewGame: () => void }
@@ -26,12 +26,12 @@ function ScoreBoard({ teams, activeTeam }: { teams: Team[]; activeTeam: number |
   )
 }
 
-function AnswerTile({ answer, revealed, guessed, index, animating }: { answer: { text: string; points: number }; revealed: boolean; guessed: boolean; index: number; animating: boolean }) {
+function AnswerTile({ row, revealed, guessed, index, animating }: { row: Answer; revealed: boolean; guessed: boolean; index: number; animating: boolean }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderRadius: 14, border: `1px solid ${guessed ? 'rgba(77,126,255,0.35)' : 'rgba(255,255,255,0.07)'}`, background: guessed ? 'linear-gradient(135deg,rgba(36,64,160,0.55) 0%,rgba(20,40,110,0.75) 100%)' : 'rgba(255,255,255,0.03)', boxShadow: guessed ? '0 4px 24px rgba(77,126,255,0.22),inset 0 1px 0 rgba(255,255,255,0.08)' : 'none', transition: 'all 0.45s cubic-bezier(0.34,1.56,0.64,1)', transform: animating ? 'scale(1.025)' : 'scale(1)', animation: animating ? 'tileReveal 0.38s cubic-bezier(0.34,1.56,0.64,1)' : 'none', cursor: 'default' }}>
       <div style={{ minWidth: 38, height: 38, borderRadius: 10, background: guessed ? 'linear-gradient(135deg,#F0A500,#C07A00)' : 'rgba(255,255,255,0.05)', border: guessed ? 'none' : '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-score)', fontSize: 18, color: guessed ? '#fff' : 'var(--text-faint)', boxShadow: guessed ? '0 2px 12px rgba(240,165,0,0.3)' : 'none', transition: 'all 0.45s ease', flexShrink: 0 }}>{index + 1}</div>
-      <div style={{ flex: 1, fontFamily: 'var(--font-display)', fontSize: 'clamp(15px,1.8vw,20px)', fontWeight: 700, color: revealed ? (guessed ? 'var(--text)' : 'var(--text-muted)') : 'transparent', letterSpacing: '0.04em', transition: 'color 0.3s ease', textTransform: 'uppercase' }}>{revealed ? answer.text.toUpperCase() : ''}</div>
-      <div style={{ fontFamily: 'var(--font-score)', fontSize: 'clamp(22px,2vw,28px)', color: revealed ? (guessed ? '#F0A500' : 'var(--text-muted)') : 'transparent', textShadow: guessed ? '0 0 16px rgba(240,165,0,0.5)' : 'none', transition: 'all 0.3s ease', minWidth: 44, textAlign: 'right' }}>{revealed ? answer.points : ''}</div>
+      <div style={{ flex: 1, fontFamily: 'var(--font-display)', fontSize: 'clamp(15px,1.8vw,20px)', fontWeight: 700, color: revealed ? (guessed ? 'var(--text)' : 'var(--text-muted)') : 'transparent', letterSpacing: '0.04em', transition: 'color 0.3s ease', textTransform: 'uppercase' }}>{revealed ? row.answer.toUpperCase() : ''}</div>
+      <div style={{ fontFamily: 'var(--font-score)', fontSize: 'clamp(22px,2vw,28px)', color: revealed ? (guessed ? '#F0A500' : 'var(--text-muted)') : 'transparent', textShadow: guessed ? '0 0 16px rgba(240,165,0,0.5)' : 'none', transition: 'all 0.3s ease', minWidth: 44, textAlign: 'right' }}>{revealed ? row.points : ''}</div>
     </div>
   )
 }
@@ -73,11 +73,11 @@ interface BoardScreenProps {
   menuProps: GameMenuProps
   onNextRound: () => void
   onNewGame: (finalTeams: Team[]) => void
-  apiKey: string
+  getJudgeAccessToken: () => Promise<string | null>
   isTokenGame: boolean
 }
 
-export default function BoardScreen({ round, teams, controllingTeam, faceOffAnswerIndex, onRoundEnd, roundNumber, totalRounds, numRounds, menuProps, onNextRound, onNewGame, apiKey, isTokenGame }: BoardScreenProps) {
+export default function BoardScreen({ round, teams, controllingTeam, faceOffAnswerIndex, onRoundEnd, roundNumber, totalRounds, numRounds, menuProps, onNextRound, onNewGame, getJudgeAccessToken, isTokenGame }: BoardScreenProps) {
   const [revealed, setRevealed] = useState<number[]>(faceOffAnswerIndex !== null ? [faceOffAnswerIndex] : [])
   const [strikes, setStrikes] = useState(0)
   const [animatingTile, setAnimatingTile] = useState<number | null>(null)
@@ -104,14 +104,14 @@ export default function BoardScreen({ round, teams, controllingTeam, faceOffAnsw
     if (!answer.trim() || roundOver || judging) return
     const submitted = answer; setAnswer(''); setJudging(true)
     setMessage('⏳ Checking…'); setMessageType('good')
-    const idx = await judgeAnswer(submitted, round.answers, revealed, apiKey)
+    const idx = await judgeAnswer(submitted, round.answers, revealed, getJudgeAccessToken)
     setJudging(false)
     if (idx !== null) {
       setHistory(h => [...h, snapshot(revealed, strikes, roundScore, stealing)])
       playReveal(); setAnimatingTile(idx); setTimeout(() => setAnimatingTile(null), 600)
       const newRevealed = [...revealed, idx], pts = round.answers[idx].points, newScore = roundScore + pts
       setRevealed(newRevealed); setRoundScore(newScore)
-      setMessage(`✓ ${round.answers[idx].text} — ${pts} pts!`); setMessageType('good')
+      setMessage(`✓ ${round.answers[idx].answer} — ${pts} pts!`); setMessageType('good')
       if (newRevealed.length === round.answers.length) { setShowAllAnswers(true); setTimeout(() => endRound(active, newScore), 1200) }
     } else {
       setHistory(h => [...h, snapshot(revealed, strikes, roundScore, stealing)])
@@ -125,7 +125,7 @@ export default function BoardScreen({ round, teams, controllingTeam, faceOffAnsw
   async function submitSteal() {
     if (!stealAnswer.trim() || judging) return
     const submitted = stealAnswer; setStealAnswer(''); setJudging(true)
-    const idx = await judgeAnswer(submitted, round.answers, revealed, apiKey)
+    const idx = await judgeAnswer(submitted, round.answers, revealed, getJudgeAccessToken)
     setJudging(false)
     const stealTeam = active === 0 ? 1 : 0
     setShowAllAnswers(true); setRoundOver(true)
@@ -164,7 +164,7 @@ export default function BoardScreen({ round, teams, controllingTeam, faceOffAnsw
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, flex: 1, position: 'relative', zIndex: 1 }}>
-        {round.answers.map((ans, i) => <AnswerTile key={i} answer={ans} revealed={revealed.includes(i) || showAllAnswers} guessed={revealed.includes(i)} index={i} animating={animatingTile === i} />)}
+        {round.answers.map((ans, i) => <AnswerTile key={ans.id || i} row={ans} revealed={revealed.includes(i) || showAllAnswers} guessed={revealed.includes(i)} index={i} animating={animatingTile === i} />)}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'center', position: 'relative', zIndex: 1 }}><XMark count={strikes} /></div>

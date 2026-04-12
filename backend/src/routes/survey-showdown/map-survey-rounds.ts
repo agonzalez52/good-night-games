@@ -1,9 +1,10 @@
 /**
  * Maps relational survey_questions / survey_answers rows to the public API
- * rounds payload: { question, answers: [{ text, points }] }.
+ * rounds payload: { question, answers: [{ id, answer, points }] } (`id` is `survey_answers.id`).
  */
 
 type SurveyRoundAnswer = {
+  readonly id: string
   readonly answer: string
   readonly points: number
 }
@@ -14,6 +15,7 @@ type SurveyRound = {
 }
 
 type AnswerRow = {
+  id: string
   answer: string
   points: number
   display_order: number
@@ -35,6 +37,6 @@ export function mapQuestionsToRounds(questions: readonly QuestionRow[]): SurveyR
     question: q.question,
     answers: [...q.answers]
       .sort((a, b) => a.display_order - b.display_order)
-      .map((a) => ({ answer: a.answer, points: a.points })),
+      .map((a) => ({ id: a.id, answer: a.answer, points: a.points })),
   }))
 }

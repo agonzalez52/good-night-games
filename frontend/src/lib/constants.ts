@@ -1,3 +1,5 @@
+import { customSurveyAnswerId, postJudge } from "@/lib/api/survey-showdown/judge";
+
 // ─── TOKENS ───────────────────────────────────────────────────────────────────
 export const TOKENS_PER_GAME = 2;
 export const MAX_CUSTOM_SURVEYS = 40;
@@ -5,10 +7,11 @@ export const MAX_CUSTOM_SURVEYS = 40;
 // ─── SURVEY PACKS ─────────────────────────────────────────────────────────────
 // Catalog + rounds come from GET /api/survey-showdown/packs and mergeSurveyPacksForGame
 // (see frontend/src/lib/api/survey-showdown/survey-packs.ts). Premium `rounds` load via GET .../packs/:id/rounds.
-// Round: { question: string, answers: { text: string, points: number }[] }
+// Round: { question, answers: { id, answer, points }[] } — `id` is survey_answers.id or custom QA hash
 
-export type Answer = { text: string; points: number };
+export type Answer = { id: string; answer: string; points: number };
 export type Round = { question: string; answers: Answer[] };
+
 export type Pack = { id: string; name: string; description: string; rounds: Round[] };
 /** Mirrors `survey_packs` rows for bundled content; `is_free` matches the DB column. */
 export interface SurveyPack extends Pack {
@@ -39,7 +42,14 @@ export type GameHistoryRecord = {
 // ─── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
 
 export function customSurveyToRounds(survey: CustomSurvey): Round[] {
-  return survey.questions.map(q => ({ question: q.question, answers: q.answers }));
+  return survey.questions.map(q => ({
+    question: q.question,
+    answers: q.answers.map(a => ({
+      id: a.id?.trim() || customSurveyAnswerId(q.question, a.answer),
+      answer: a.answer,
+      points: a.points,
+    })),
+  }))
 }
 
 export function resolvePackRounds(
@@ -76,8 +86,9 @@ export function shuffleArray<T>(arr: T[]): T[] {
   return a;
 }
 
-export function normalize(str: string): string {
-  return str.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+export function normalize(str: string | null | undefined): string {
+  if (str == null) return "";
+  return String(str).toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
 }
 
 export function levenshtein(a: string, b: string): number {
@@ -96,7 +107,9 @@ export function checkAnswerFast(input: string, answers: Answer[], revealedIndice
   if (!norm) return null;
   for (let i = 0; i < answers.length; i++) {
     if (revealedIndices.includes(i)) continue;
-    const target = normalize(answers[i].text);
+    const answerText = answers[i]?.answer;
+    if (answerText == null || answerText === '') continue;
+    const target = normalize(answerText);
     if (norm === target) return i;
     if (target.includes(norm) || norm.includes(target)) return i;
     const iw = norm.split(" ").filter(w => w.length > 2);
@@ -108,45 +121,50 @@ export function checkAnswerFast(input: string, answers: Answer[], revealedIndice
   return null;
 }
 
+function coerceParsedRound(r: { question?: unknown; answers?: unknown }): Round {
+  const q = String(r.question ?? '')
+  const answersIn = Array.isArray(r.answers) ? r.answers : []
+  return {
+    question: q,
+    answers: answersIn.map((a: { id?: unknown; answer?: unknown; points?: unknown }) => {
+      const answer = String((a as { answer?: unknown }).answer ?? '')
+      const idRaw = (a as { id?: unknown }).id
+      const id = typeof idRaw === 'string' && idRaw.trim() ? idRaw.trim() : customSurveyAnswerId(q, answer)
+      return {
+        id,
+        answer,
+        points: typeof a.points === 'number' ? a.points : Number(a.points) || 0,
+      }
+    }),
+  }
+}
+
 export function parseCustomData(text: string): Round[] | null {
   try {
     const d = JSON.parse(text);
-    if (Array.isArray(d)) return d;
-    if (d.rounds) return d.rounds;
-    return null;
+    const raw = Array.isArray(d) ? d : d.rounds && Array.isArray(d.rounds) ? d.rounds : null;
+    if (!raw) return null;
+    return raw.map((r: { question?: unknown; answers?: unknown }) => coerceParsedRound(r));
   } catch { return null; }
 }
 
-// Phase 8: replace this function body with fetch('POST /api/survey-showdown/judge', ...)
-// The backend handles caching and rate limiting. Remove apiKey param entirely at that point.
+/**
+ * Local fuzzy match first; if needed, POST /api/survey-showdown/judge (auth required for AI).
+ */
 export async function judgeAnswer(
   input: string,
   answers: Answer[],
   revealedIndices: number[],
-  apiKey: string
+  getAccessToken: () => Promise<string | null>
 ): Promise<number | null> {
-  if (!input.trim()) return null;
+  if (!input?.trim()) return null;
   const fast = checkAnswerFast(input, answers, revealedIndices);
   if (fast !== null) return fast;
-  if (!apiKey) return null;
-  const candidates = answers.map((a, i) => ({ i, text: a.text })).filter(({ i }) => !revealedIndices.includes(i));
-  if (candidates.length === 0) return null;
-  const candidateList = candidates.map(({ i, text }) => `${i}: "${text}"`).join("\n");
-  const prompt = `You are judging a Survey Showdown game. The player answered: "${input}"\n\nThe survey answers on the board are:\n${candidateList}\n\nDoes the player's answer match any of the survey answers in meaning? Consider synonyms, common phrases, and reasonable equivalents.\n\nReply with ONLY the number of the matching answer index, or "none" if there is no match. No explanation.`;
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 10, messages: [{ role: "user", content: prompt }] }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const reply = (data.content?.[0]?.text || "").trim().toLowerCase();
-    if (reply === "none" || reply === "") return null;
-    const idx = parseInt(reply, 10);
-    if (!isNaN(idx) && candidates.some(c => c.i === idx)) return idx;
-  } catch (e) { console.warn("AI judge failed:", e); }
-  return null;
+  const token = await getAccessToken();
+  if (!token) return null;
+  const answerIds = answers.map(a => a.id?.trim()).filter(Boolean) as string[];
+  if (answerIds.length !== answers.length) return null;
+  return postJudge(token, input.trim(), answerIds, answers, revealedIndices);
 }
 
 // ─── SOUNDS ───────────────────────────────────────────────────────────────────

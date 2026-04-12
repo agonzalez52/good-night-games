@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import SetupScreen from '@/components/survey-showdown/SetupScreen'
@@ -68,7 +68,10 @@ export default function SurveyShowdownApp() {
   const [controllingTeam, setControllingTeam] = useState(0)
   const [faceOffAnswerIndex, setFaceOffAnswerIndex] = useState<number | null>(null)
   const [shuffledRounds, setShuffledRounds] = useState<ReturnType<typeof resolvePackRounds>>([])
-  const [apiKey] = useState('') // Phase 8: remove entirely — judge moves to backend
+  const getJudgeAccessToken = useCallback(async () => {
+    const { data: { session } } = await createClient().auth.getSession()
+    return session?.access_token ?? null
+  }, [])
 
   // Pack catalog (GET /api/survey-showdown/packs) + cached premium rounds after auth fetch
   const [packs, setPacks] = useState<GetPacksResponse | null>(null)
@@ -380,7 +383,7 @@ export default function SurveyShowdownApp() {
           onWinFaceOff={handleFaceOffWin}
           roundNumber={currentRound + 1} totalRounds={numRounds}
           timerSecs={timerSecs} menuProps={menuProps}
-          apiKey={apiKey} onSkip={handleSkipQuestion}
+          getJudgeAccessToken={getJudgeAccessToken} onSkip={handleSkipQuestion}
         />
       )}
       {screen === 'board' && activeRounds[currentRound] && (
@@ -390,7 +393,7 @@ export default function SurveyShowdownApp() {
           onRoundEnd={handleRoundEnd}
           roundNumber={currentRound + 1} totalRounds={numRounds} numRounds={numRounds}
           menuProps={menuProps} onNextRound={handleNextRound}
-          onNewGame={handleNewGame} apiKey={apiKey} isTokenGame={isTokenGame}
+          onNewGame={handleNewGame} getJudgeAccessToken={getJudgeAccessToken} isTokenGame={isTokenGame}
         />
       )}
 

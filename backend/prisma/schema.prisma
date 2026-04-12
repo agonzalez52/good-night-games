@@ -74,15 +74,18 @@ model referrals {
 }
 
 model judge_cache {
-  id             String   @id @default(uuid())
-  game_id        String
-  input_text     String
-  survey_id      String
-  matched_answer String?
-  is_match       Boolean
-  created_at     DateTime @default(now())
+  id               String   @id @default(uuid())
+  game_id          String
+  /// Normalized player guess (lowercased trim).
+  input_text       String
+  /// Canonical slot: `survey_answers.id` (pack) or custom `ss:qa:*`.
+  survey_answer_id String
+  matched_answer   String?
+  /// True = semantic match for this triple; false = cached non-match. When every still-hidden id has `false`, the judge skips Anthropic.
+  is_match         Boolean
+  created_at       DateTime @default(now())
 
-  @@unique([game_id, input_text, survey_id])
+  @@unique([game_id, input_text, survey_answer_id])
 }
 
 model feedback {

@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { MAX_CUSTOM_SURVEYS } from '@/lib/constants'
-import type { CustomSurvey, CustomCollection } from '@/lib/constants'
+import type { Answer, CustomSurvey, CustomCollection } from '@/lib/constants'
+import { customSurveyAnswerId } from '@/lib/api/survey-showdown/judge'
 
 // Phase 9 API integration:
 //   GET    /api/survey-showdown/custom-surveys           → load surveys + collections
@@ -13,15 +14,17 @@ import type { CustomSurvey, CustomCollection } from '@/lib/constants'
 //   PUT    /api/survey-showdown/custom-surveys/collections/:id
 //   DELETE /api/survey-showdown/custom-surveys/collections/:id → surveys set to uncategorized
 
-type Answer = { text: string; points: number }
 type Question = { id: string; question: string; answers: Answer[] }
 
 const emptyQuestion = (): Question => ({
   id: `q-${Date.now()}-${Math.random()}`,
   question: '',
-  answers: [{ text: '', points: 30 }, { text: '', points: 20 }],
+  answers: [
+    { id: '', answer: '', points: 30 },
+    { id: '', answer: '', points: 20 },
+  ],
 })
-const emptyAnswer = (): Answer => ({ text: '', points: 10 })
+const emptyAnswer = (): Answer => ({ id: '', answer: '', points: 10 })
 
 interface CustomSurveysModalProps {
   surveys: CustomSurvey[]
@@ -48,18 +51,38 @@ export default function CustomSurveysModal({
   const [sError, setSError] = useState('')
 
   function openCreateSurvey() { setEditingSurvey(null); setSName(''); setSCollId(null); setSQuestions([emptyQuestion()]); setSError(''); setView('survey') }
-  function openEditSurvey(s: CustomSurvey) { setEditingSurvey(s); setSName(s.name); setSCollId(s.collectionId); setSQuestions(s.questions.map(q => ({ ...q, answers: [...q.answers] }))); setSError(''); setView('survey') }
+  function openEditSurvey(s: CustomSurvey) {
+    setEditingSurvey(s); setSName(s.name); setSCollId(s.collectionId)
+    setSQuestions(s.questions.map(q => ({
+      ...q,
+      answers: q.answers.map(a => ({
+        id: a.id?.trim() || customSurveyAnswerId(q.question, a.answer),
+        answer: a.answer,
+        points: a.points,
+      })),
+    })))
+    setSError(''); setView('survey')
+  }
   function openCreateCollection() { setEditingCollection(null); setCName(''); setCError(''); setView('collection') }
   function openEditCollection(c: CustomCollection) { setEditingCollection(c); setCName(c.name); setCError(''); setView('collection') }
 
   function saveSurvey() {
     if (!sName.trim()) { setSError('Survey name is required.'); return }
-    const validQs = sQuestions.filter(q => q.question.trim() && q.answers.filter(a => a.text.trim()).length >= 2)
+    const validQs = sQuestions.filter(q => q.question.trim() && q.answers.filter(a => a.answer.trim()).length >= 2)
     if (!validQs.length) { setSError('At least one complete question with 2 answers required.'); return }
     const survey: CustomSurvey = {
       id: editingSurvey?.id || `s-${Date.now()}`,
       name: sName.trim(), collectionId: sCollId || null,
-      questions: validQs.map(q => ({ ...q, answers: q.answers.filter(a => a.text.trim()) })),
+      questions: validQs.map(q => ({
+        ...q,
+        answers: q.answers
+          .filter(a => a.answer.trim())
+          .map(a => ({
+            id: customSurveyAnswerId(q.question, a.answer),
+            answer: a.answer,
+            points: a.points,
+          })),
+      })),
     }
     onSaveSurvey(survey); setView('list')
   }
@@ -155,7 +178,7 @@ export default function CustomSurveysModal({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {q.answers.map((a, ai) => (
                       <div key={ai} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <input value={a.text} onChange={e => updateAnswer(qi, ai, 'text', e.target.value)} placeholder={`Answer ${ai + 1}`} style={{ ...fieldStyle, flex: 1 }} />
+                        <input value={a.answer} onChange={e => updateAnswer(qi, ai, 'answer', e.target.value)} placeholder={`Answer ${ai + 1}`} style={{ ...fieldStyle, flex: 1 }} />
                         <input type="number" value={a.points} onChange={e => updateAnswer(qi, ai, 'points', String(Math.max(1, Math.min(100, Number(e.target.value) || 1))))} min={1} max={100} style={{ ...fieldStyle, width: 64, textAlign: 'center', padding: '9px 6px' }} />
                         {q.answers.length > 2 && <button onClick={() => removeAnswer(qi, ai)} style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,77,106,0.08)', color: '#FF4D6A', border: '1px solid rgba(255,77,106,0.2)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}>✕</button>}
                       </div>

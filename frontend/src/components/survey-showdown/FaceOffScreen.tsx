@@ -50,11 +50,11 @@ interface FaceOffScreenProps {
   totalRounds: number
   timerSecs: number
   menuProps: GameMenuProps
-  apiKey: string
+  getJudgeAccessToken: () => Promise<string | null>
   onSkip: () => void
 }
 
-export default function FaceOffScreen({ round, teams, onWinFaceOff, roundNumber, totalRounds, timerSecs, menuProps, apiKey, onSkip }: FaceOffScreenProps) {
+export default function FaceOffScreen({ round, teams, onWinFaceOff, roundNumber, totalRounds, timerSecs, menuProps, getJudgeAccessToken, onSkip }: FaceOffScreenProps) {
   const [buzzed, setBuzzed] = useState<number | null>(null)
   const [answer, setAnswer] = useState('')
   const [result, setResult] = useState<{ correct: boolean; teamIndex: number; answerIndex: number | null } | null>(null)
@@ -98,7 +98,7 @@ export default function FaceOffScreen({ round, teams, onWinFaceOff, roundNumber,
     if (!answer.trim() || buzzed === null || judging) return
     clearInterval(tickRef.current!); setTimerActive(false)
     const submitted = answer; setAnswer(''); setJudging(true)
-    const idx = await judgeAnswer(submitted, round.answers, [], apiKey)
+    const idx = await judgeAnswer(submitted, round.answers, [], getJudgeAccessToken)
     setJudging(false)
     if (idx !== null) { playReveal(); setResult({ correct: true, teamIndex: buzzed, answerIndex: idx }) }
     else { playBuzz(); setResult({ correct: false, teamIndex: buzzed, answerIndex: null }) }
