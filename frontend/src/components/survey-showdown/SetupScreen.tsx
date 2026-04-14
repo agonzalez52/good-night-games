@@ -144,7 +144,7 @@ export default function SetupScreen({
                 top: '50%',
                 transform: 'translate(-50%, -50%)',
                 width: 'calc(100% + clamp(36px, 8vw, 72px))',
-                height: 'clamp(36.50px, 5.90vw, 61.77px)',
+                height: 'clamp(40.25px, 6.51vw, 68.10px)',
                 borderRadius: 14,
                 border: '5px solid var(--gold)',
                 background: 'transparent',
