@@ -1,4 +1,5 @@
-import { serve } from '@hono/node-server'
+import { createAdaptorServer } from '@hono/node-server'
+import type { AddressInfo } from 'node:net'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -47,6 +48,20 @@ app.route('/api/survey-showdown/judge', judge)
 app.route('/api/survey-showdown/history', history)
 
 const port = Number(process.env.PORT) || 3001
-console.log(`Server running on port ${port}`)
+const server = createAdaptorServer({ fetch: app.fetch })
 
-serve({ fetch: app.fetch, port })
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code !== 'EADDRINUSE') throw err
+  console.error(
+    `Port ${port} is already in use. Stop the other process or set PORT to a free port (for example PORT=3002).`,
+  )
+  console.error(`Windows: netstat -ano | findstr :${port}`)
+  process.exit(1)
+})
+
+server.listen(port, () => {
+  const addr = server.address()
+  const boundPort =
+    typeof addr === 'object' && addr !== null ? (addr as AddressInfo).port : port
+  console.log(`Server listening on http://localhost:${boundPort}`)
+})

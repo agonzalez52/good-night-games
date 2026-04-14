@@ -17,6 +17,8 @@ import { TOKENS_PER_GAME } from '@/lib/constants'
 import type { CurrentUser, CustomSurvey, CustomCollection, SurveyQuestion, GameHistoryRecord } from '@/lib/constants'
 import type { SurveyPackFreeListItem, SurveyPackPremiumListItem } from '@/lib/api/survey-showdown/survey-packs'
 
+const DEFAULT_SETUP_ROUNDS = 5
+
 interface SetupScreenProps {
   onStart: (team1: string, team2: string, timerSecs: number, numRounds: number) => void
   packQuestions: SurveyQuestion[]
@@ -57,7 +59,7 @@ export default function SetupScreen({
   const [team1, setTeam1] = useState('TEAM 1')
   const [team2, setTeam2] = useState('TEAM 2')
   const [timerSecs, setTimerSecs] = useState(5)
-  const [numRounds, setNumRounds] = useState(5)
+  const [numRounds, setNumRounds] = useState(DEFAULT_SETUP_ROUNDS)
   const [showCustomSurveys, setShowCustomSurveys] = useState(false)
   const [showHowToPlay, setShowHowToPlay] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
@@ -72,7 +74,10 @@ export default function SetupScreen({
   const timerOptions = [3, 5, 10]
   const maxRounds = Math.max(packQuestions.length, setupRoundCountCap, 1)
 
-  useEffect(() => { setNumRounds(n => Math.min(n, maxRounds)) }, [maxRounds])
+  useEffect(() => {
+    if (packsLoading) return
+    setNumRounds(n => Math.min(n, maxRounds))
+  }, [maxRounds, packsLoading])
 
   useEffect(() => {
     function h(e: MouseEvent) {
@@ -197,14 +202,25 @@ export default function SetupScreen({
 
           {/* Rounds + Timer */}
           <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ flex: '0 0 auto', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '14px 16px', textAlign: 'center', minWidth: 140 }}>
+            <div style={{ flex: '0 0 auto', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '14px 16px', textAlign: 'center', minWidth: 140 }} aria-busy={packsLoading}>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 9, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase', marginBottom: 10 }}>🎮 Rounds</div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-                <button onClick={() => setNumRounds(r => Math.max(1, r - 1))} style={{ width: 32, height: 32, borderRadius: 9, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                <div style={{ fontFamily: 'var(--font-score)', fontSize: 44, color: '#F0A500', minWidth: 40, textAlign: 'center', lineHeight: 1, textShadow: '0 0 20px rgba(240,165,0,0.3)' }}>{numRounds}</div>
-                <button onClick={() => setNumRounds(r => Math.min(maxRounds, r + 1))} style={{ width: 32, height: 32, borderRadius: 9, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-              </div>
-              <div style={{ color: 'var(--text-faint)', fontSize: 10, fontFamily: 'var(--font-body)', marginTop: 5 }}>{maxRounds} available</div>
+              {packsLoading ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, marginBottom: 5 }}>
+                    <div style={{ width: 120, height: 36, borderRadius: 10, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} aria-hidden />
+                  </div>
+                  <div style={{ color: 'var(--text-faint)', fontSize: 10, fontFamily: 'var(--font-body)', marginTop: 5 }}>Loading packs…</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                    <button type="button" onClick={() => setNumRounds(r => Math.max(1, r - 1))} style={{ width: 32, height: 32, borderRadius: 9, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                    <div style={{ fontFamily: 'var(--font-score)', fontSize: 44, color: '#F0A500', minWidth: 40, textAlign: 'center', lineHeight: 1, textShadow: '0 0 20px rgba(240,165,0,0.3)' }}>{numRounds}</div>
+                    <button type="button" onClick={() => setNumRounds(r => Math.min(maxRounds, r + 1))} style={{ width: 32, height: 32, borderRadius: 9, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                  </div>
+                  <div style={{ color: 'var(--text-faint)', fontSize: 10, fontFamily: 'var(--font-body)', marginTop: 5 }}>{maxRounds} available</div>
+                </>
+              )}
             </div>
 
             <div style={{ flex: 1, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '14px 16px' }}>

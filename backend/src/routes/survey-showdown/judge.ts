@@ -100,6 +100,8 @@ ${candidateList}
 
 Does the player's answer match any of these in meaning? Consider synonyms, common phrases, and reasonable equivalents.
 
+If more than one line is a reasonable match, pick any one of their indices—do not reply "none" just because several could fit.
+
 Reply with ONLY the number of the matching answer index from the list above, or "none" if there is no match. No explanation.`
 
       const message = await anthropic.messages.create({

@@ -5,14 +5,18 @@ export const TOKENS_PER_GAME = 2;
 export const MAX_CUSTOM_SURVEYS = 40;
 
 // ─── SURVEY PACKS ─────────────────────────────────────────────────────────────
-// Catalog + rounds come from GET /api/survey-showdown/packs and mergeSurveyPacksForGame
-// (see frontend/src/lib/api/survey-showdown/survey-packs.ts). Premium `rounds` load via GET .../packs/:id/rounds.
-// Round: { question, answers: { id, answer, points }[] } — `id` is survey_answers.id or custom QA hash
+// Catalog + questions come from GET /api/survey-showdown/packs and mergeSurveyPacksForGame
+// (see frontend/src/lib/api/survey-showdown/survey-packs.ts). Premium questions load via GET .../packs/:id/questions.
+// Answer.id is survey_answers.id or custom QA hash; SurveyQuestion.id is survey_questions.id or client-generated for custom/import.
 
 export type Answer = { id: string; answer: string; points: number };
-export type Round = { question: string; answers: Answer[] };
+export interface SurveyQuestion {
+  id: string
+  question: string
+  answers: Answer[]
+}
 
-export type Pack = { id: string; name: string; description: string; rounds: Round[] };
+export type Pack = { id: string; name: string; description: string; questions: SurveyQuestion[] };
 /** Mirrors `survey_packs` rows for bundled content; `is_free` matches the DB column. */
 export interface SurveyPack extends Pack {
   is_free: boolean;
@@ -41,10 +45,16 @@ export type GameHistoryRecord = {
 
 // ─── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
 
-export function customSurveyToRounds(survey: CustomSurvey): Round[] {
-  return survey.questions.map(q => ({
+function newSurveyQuestionClientId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  return `q-${Math.random().toString(36).slice(2, 12)}`
+}
+
+export function customSurveyToQuestions(survey: CustomSurvey): SurveyQuestion[] {
+  return survey.questions.map((q) => ({
+    id: q.id?.trim() || newSurveyQuestionClientId(),
     question: q.question,
-    answers: q.answers.map(a => ({
+    answers: q.answers.map((a) => ({
       id: a.id?.trim() || customSurveyAnswerId(q.question, a.answer),
       answer: a.answer,
       points: a.points,
@@ -52,29 +62,29 @@ export function customSurveyToRounds(survey: CustomSurvey): Round[] {
   }))
 }
 
-export function resolvePackRounds(
+export function resolvePackQuestions(
   packId: string,
   customSurveys: CustomSurvey[],
   customCollections: CustomCollection[],
   surveyPacks: SurveyPack[]
-): Round[] {
+): SurveyQuestion[] {
   const FREE_PACKS = surveyPacks.filter(p => p.is_free);
   const PREMIUM_PACKS = surveyPacks.filter(p => !p.is_free);
-  const fallbackRounds = FREE_PACKS[0]?.rounds ?? [];
-  const allCustom = customSurveys.flatMap(customSurveyToRounds);
+  const fallbackQuestions = FREE_PACKS[0]?.questions ?? [];
+  const allCustom = customSurveys.flatMap(customSurveyToQuestions);
   if (packId === "random") {
-    const base = [...FREE_PACKS.flatMap(p => p.rounds), ...PREMIUM_PACKS.flatMap(p => p.rounds)];
+    const base = [...FREE_PACKS.flatMap(p => p.questions), ...PREMIUM_PACKS.flatMap(p => p.questions)];
     return allCustom.length ? [...allCustom, ...base] : base;
   }
-  if (packId === "custom_all") return allCustom.length ? allCustom : fallbackRounds;
-  const fp = FREE_PACKS.find(p => p.id === packId); if (fp) return fp.rounds;
-  const pp = PREMIUM_PACKS.find(p => p.id === packId); if (pp) return pp.rounds;
+  if (packId === "custom_all") return allCustom.length ? allCustom : fallbackQuestions;
+  const fp = FREE_PACKS.find(p => p.id === packId); if (fp) return fp.questions;
+  const pp = PREMIUM_PACKS.find(p => p.id === packId); if (pp) return pp.questions;
   const coll = customCollections.find(c => c.id === packId);
   if (coll) {
-    const r = customSurveys.filter(s => s.collectionId === coll.id).flatMap(customSurveyToRounds);
-    return r.length ? r : fallbackRounds;
+    const r = customSurveys.filter(s => s.collectionId === coll.id).flatMap(customSurveyToQuestions);
+    return r.length ? r : fallbackQuestions;
   }
-  return fallbackRounds;
+  return fallbackQuestions;
 }
 
 export function shuffleArray<T>(arr: T[]): T[] {
@@ -91,18 +101,8 @@ export function normalize(str: string | null | undefined): string {
   return String(str).toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
 }
 
-export function levenshtein(a: string, b: string): number {
-  const m = a.length, n = b.length;
-  const dp = Array.from({ length: m + 1 }, (_, i) =>
-    Array.from({ length: n + 1 }, (_, j) => i === 0 ? j : j === 0 ? i : 0)
-  );
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-  return dp[m][n];
-}
-
-export function checkAnswerFast(input: string, answers: Answer[], revealedIndices: number[]): number | null {
+/** Normalized string equality only — used for signed-in (before AI) and signed-out matching. */
+export function checkAnswerExact(input: string, answers: Answer[], revealedIndices: number[]): number | null {
   const norm = normalize(input);
   if (!norm) return null;
   for (let i = 0; i < answers.length; i++) {
@@ -111,27 +111,24 @@ export function checkAnswerFast(input: string, answers: Answer[], revealedIndice
     if (answerText == null || answerText === '') continue;
     const target = normalize(answerText);
     if (norm === target) return i;
-    if (target.includes(norm) || norm.includes(target)) return i;
-    const iw = norm.split(" ").filter(w => w.length > 2);
-    const tw = target.split(" ").filter(w => w.length > 2);
-    const overlap = iw.filter(w => tw.some(t => t.includes(w) || w.includes(t)));
-    if (overlap.length > 0 && overlap.length >= Math.min(iw.length, tw.length) * 0.6) return i;
-    if (target.length <= 20 && levenshtein(norm, target) <= 3) return i;
   }
   return null;
 }
 
-function coerceParsedRound(r: { question?: unknown; answers?: unknown }): Round {
-  const q = String(r.question ?? '')
+function coerceParsedQuestion(r: { id?: unknown; question?: unknown; answers?: unknown }): SurveyQuestion {
+  const questionText = String(r.question ?? '')
   const answersIn = Array.isArray(r.answers) ? r.answers : []
+  const idRaw = r.id
+  const id = typeof idRaw === 'string' && idRaw.trim() ? idRaw.trim() : newSurveyQuestionClientId()
   return {
-    question: q,
+    id,
+    question: questionText,
     answers: answersIn.map((a: { id?: unknown; answer?: unknown; points?: unknown }) => {
       const answer = String((a as { answer?: unknown }).answer ?? '')
-      const idRaw = (a as { id?: unknown }).id
-      const id = typeof idRaw === 'string' && idRaw.trim() ? idRaw.trim() : customSurveyAnswerId(q, answer)
+      const answerIdRaw = (a as { id?: unknown }).id
+      const answerId = typeof answerIdRaw === 'string' && answerIdRaw.trim() ? answerIdRaw.trim() : customSurveyAnswerId(questionText, answer)
       return {
-        id,
+        id: answerId,
         answer,
         points: typeof a.points === 'number' ? a.points : Number(a.points) || 0,
       }
@@ -139,17 +136,18 @@ function coerceParsedRound(r: { question?: unknown; answers?: unknown }): Round 
   }
 }
 
-export function parseCustomData(text: string): Round[] | null {
+export function parseCustomData(text: string): SurveyQuestion[] | null {
   try {
     const d = JSON.parse(text);
-    const raw = Array.isArray(d) ? d : d.rounds && Array.isArray(d.rounds) ? d.rounds : null;
+    const raw = Array.isArray(d) ? d : d.questions && Array.isArray(d.questions) ? d.questions : null;
     if (!raw) return null;
-    return raw.map((r: { question?: unknown; answers?: unknown }) => coerceParsedRound(r));
+    return raw.map((r: { id?: unknown; question?: unknown; answers?: unknown }) => coerceParsedQuestion(r));
   } catch { return null; }
 }
 
 /**
- * Local fuzzy match first; if needed, POST /api/survey-showdown/judge (auth required for AI).
+ * Signed in: exact normalized match, else POST /api/survey-showdown/judge.
+ * Signed out: exact normalized match only (no AI).
  */
 export async function judgeAnswer(
   input: string,
@@ -158,8 +156,8 @@ export async function judgeAnswer(
   getAccessToken: () => Promise<string | null>
 ): Promise<number | null> {
   if (!input?.trim()) return null;
-  const fast = checkAnswerFast(input, answers, revealedIndices);
-  if (fast !== null) return fast;
+  const exact = checkAnswerExact(input, answers, revealedIndices);
+  if (exact !== null) return exact;
   const token = await getAccessToken();
   if (!token) return null;
   const answerIds = answers.map(a => a.id?.trim()).filter(Boolean) as string[];

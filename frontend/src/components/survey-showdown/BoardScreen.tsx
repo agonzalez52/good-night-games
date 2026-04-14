@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import GameMenu from '@/components/survey-showdown/GameMenu'
 import { AdBanner } from '@/components/survey-showdown/AdBanner'
 import { judgeAnswer, playBuzz, playReveal, playTick } from '@/lib/constants'
-import type { Answer, Round } from '@/lib/constants'
+import type { Answer, SurveyQuestion } from '@/lib/constants'
 
 interface Team { name: string; score: number }
 interface GameMenuProps { timerSecs: number; onTimerChange: (s: number) => void; onNewGame: () => void }
@@ -62,7 +62,7 @@ function BetweenRoundNext({ isTokenGame, onNextRound, roundNumber }: { isTokenGa
 }
 
 interface BoardScreenProps {
-  round: Round
+  currentQuestion: SurveyQuestion
   teams: Team[]
   controllingTeam: number
   faceOffAnswerIndex: number | null
@@ -77,14 +77,14 @@ interface BoardScreenProps {
   isTokenGame: boolean
 }
 
-export default function BoardScreen({ round, teams, controllingTeam, faceOffAnswerIndex, onRoundEnd, roundNumber, totalRounds, numRounds, menuProps, onNextRound, onNewGame, getJudgeAccessToken, isTokenGame }: BoardScreenProps) {
+export default function BoardScreen({ currentQuestion, teams, controllingTeam, faceOffAnswerIndex, onRoundEnd, roundNumber, totalRounds, numRounds, menuProps, onNextRound, onNewGame, getJudgeAccessToken, isTokenGame }: BoardScreenProps) {
   const [revealed, setRevealed] = useState<number[]>(faceOffAnswerIndex !== null ? [faceOffAnswerIndex] : [])
   const [strikes, setStrikes] = useState(0)
   const [animatingTile, setAnimatingTile] = useState<number | null>(null)
   const [answer, setAnswer] = useState('')
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('')
-  const [roundScore, setRoundScore] = useState(faceOffAnswerIndex !== null ? round.answers[faceOffAnswerIndex].points : 0)
+  const [roundScore, setRoundScore] = useState(faceOffAnswerIndex !== null ? currentQuestion.answers[faceOffAnswerIndex].points : 0)
   const [stealing, setStealing] = useState(false)
   const [stealAnswer, setStealAnswer] = useState('')
   const [roundOver, setRoundOver] = useState(false)
@@ -104,15 +104,15 @@ export default function BoardScreen({ round, teams, controllingTeam, faceOffAnsw
     if (!answer.trim() || roundOver || judging) return
     const submitted = answer; setAnswer(''); setJudging(true)
     setMessage('⏳ Checking…'); setMessageType('good')
-    const idx = await judgeAnswer(submitted, round.answers, revealed, getJudgeAccessToken)
+    const idx = await judgeAnswer(submitted, currentQuestion.answers, revealed, getJudgeAccessToken)
     setJudging(false)
     if (idx !== null) {
       setHistory(h => [...h, snapshot(revealed, strikes, roundScore, stealing)])
       playReveal(); setAnimatingTile(idx); setTimeout(() => setAnimatingTile(null), 600)
-      const newRevealed = [...revealed, idx], pts = round.answers[idx].points, newScore = roundScore + pts
+      const newRevealed = [...revealed, idx], pts = currentQuestion.answers[idx].points, newScore = roundScore + pts
       setRevealed(newRevealed); setRoundScore(newScore)
-      setMessage(`✓ ${round.answers[idx].answer} — ${pts} pts!`); setMessageType('good')
-      if (newRevealed.length === round.answers.length) { setShowAllAnswers(true); setTimeout(() => endRound(active, newScore), 1200) }
+      setMessage(`✓ ${currentQuestion.answers[idx].answer} — ${pts} pts!`); setMessageType('good')
+      if (newRevealed.length === currentQuestion.answers.length) { setShowAllAnswers(true); setTimeout(() => endRound(active, newScore), 1200) }
     } else {
       setHistory(h => [...h, snapshot(revealed, strikes, roundScore, stealing)])
       playBuzz(); const ns = strikes + 1; setStrikes(ns)
@@ -125,11 +125,11 @@ export default function BoardScreen({ round, teams, controllingTeam, faceOffAnsw
   async function submitSteal() {
     if (!stealAnswer.trim() || judging) return
     const submitted = stealAnswer; setStealAnswer(''); setJudging(true)
-    const idx = await judgeAnswer(submitted, round.answers, revealed, getJudgeAccessToken)
+    const idx = await judgeAnswer(submitted, currentQuestion.answers, revealed, getJudgeAccessToken)
     setJudging(false)
     const stealTeam = active === 0 ? 1 : 0
     setShowAllAnswers(true); setRoundOver(true)
-    if (idx !== null) { playReveal(); setAnimatingTile(idx); setTimeout(() => setAnimatingTile(null), 600); const newRevealed = [...revealed, idx]; setRevealed(newRevealed); setTimeout(() => endRound(stealTeam, roundScore + round.answers[idx].points), 1200) }
+    if (idx !== null) { playReveal(); setAnimatingTile(idx); setTimeout(() => setAnimatingTile(null), 600); const newRevealed = [...revealed, idx]; setRevealed(newRevealed); setTimeout(() => endRound(stealTeam, roundScore + currentQuestion.answers[idx].points), 1200) }
     else { playBuzz(); setTimeout(() => endRound(active, roundScore), 1000) }
   }
 
@@ -160,11 +160,11 @@ export default function BoardScreen({ round, teams, controllingTeam, faceOffAnsw
       </div>
 
       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '11px 20px', textAlign: 'center', position: 'relative', zIndex: 1 }}>
-        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(13px,1.8vw,22px)', color: 'var(--text)', letterSpacing: '-0.01em' }}>{round.question}</div>
+        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(13px,1.8vw,22px)', color: 'var(--text)', letterSpacing: '-0.01em' }}>{currentQuestion.question}</div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, flex: 1, position: 'relative', zIndex: 1 }}>
-        {round.answers.map((ans, i) => <AnswerTile key={ans.id || i} row={ans} revealed={revealed.includes(i) || showAllAnswers} guessed={revealed.includes(i)} index={i} animating={animatingTile === i} />)}
+        {currentQuestion.answers.map((ans, i) => <AnswerTile key={ans.id || i} row={ans} revealed={revealed.includes(i) || showAllAnswers} guessed={revealed.includes(i)} index={i} animating={animatingTile === i} />)}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'center', position: 'relative', zIndex: 1 }}><XMark count={strikes} /></div>
