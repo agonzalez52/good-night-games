@@ -133,7 +133,7 @@ export default function SetupScreen({
 
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 24, animation: 'logoIn 0.7s cubic-bezier(0.34,1.56,0.64,1) both' }}>
-          <div style={{ fontFamily: 'var(--font-outfit)', fontWeight: 800, fontSize: 28, letterSpacing: '0.05em', color: 'var(--text-faint)', marginBottom: 10 }}>good night games</div>
+          <div style={{ fontFamily: 'var(--font-outfit)', fontWeight: 800, fontSize: 25, color: 'var(--text-faint)', marginBottom: 10 }}>good night games</div>
           <div style={{ display: 'inline-block', position: 'relative', verticalAlign: 'top' }}>
             {/* AnswerTile-shaped outline: no fill, gold border, centered on the line between SURVEY / SHOWDOWN */}
             <div
@@ -144,11 +144,12 @@ export default function SetupScreen({
                 top: '50%',
                 transform: 'translate(-50%, -50%)',
                 width: 'calc(100% + clamp(36px, 8vw, 72px))',
-                height: 'clamp(26px, 4.2vw, 44px)',
+                height: 'clamp(36.50px, 5.90vw, 61.77px)',
                 borderRadius: 14,
                 border: '5px solid var(--gold)',
                 background: 'transparent',
                 boxSizing: 'border-box',
+                opacity: 0.85,
                 pointerEvents: 'none',
                 zIndex: 0,
               }}
