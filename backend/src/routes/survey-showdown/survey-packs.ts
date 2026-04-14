@@ -2,9 +2,9 @@ import { Hono } from 'hono'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma'
 import { requireAuth, AuthVariables } from '../../middleware/auth'
-import { mapQuestionsToRounds } from './map-survey-rounds'
+import { serializePackQuestions } from './serialize-pack-questions'
 
-const packs = new Hono<{ Variables: AuthVariables }>()
+const surveyPacks = new Hono<{ Variables: AuthVariables }>()
 
 const packListInclude = {
   questions: {
@@ -17,8 +17,8 @@ const packListInclude = {
 
 // GET /api/survey-showdown/packs
 // Public — no auth required for free packs
-// Returns { free: Pack[], premium: Pack[] }
-packs.get('/', async (c) => {
+// Returns { free: packs with questions[], premium: metadata + question_count }
+surveyPacks.get('/', async (c) => {
   try {
     const allPacks = await prisma.survey_packs.findMany({
       where: { is_active: true },
@@ -30,14 +30,14 @@ packs.get('/', async (c) => {
       .filter((p) => p.is_free)
       .map(({ questions, ...rest }) => ({
         ...rest,
-        rounds: mapQuestionsToRounds(questions),
+        questions: serializePackQuestions(questions),
       }))
 
     const premiumPacks = allPacks
       .filter((p) => !p.is_free)
       .map(({ questions, ...rest }) => ({
         ...rest,
-        round_count: questions.length,
+        question_count: questions.length,
       }))
 
     return c.json({
@@ -50,10 +50,9 @@ packs.get('/', async (c) => {
   }
 })
 
-// GET /api/survey-showdown/packs/:id/rounds
+// GET /api/survey-showdown/packs/:id/questions
 // Protected — only callable after tokens have been spent
-// Returns the rounds for a single pack
-packs.get('/:id/rounds', requireAuth, async (c) => {
+surveyPacks.get('/:id/questions', requireAuth, async (c) => {
   const id = c.req.param('id')
   try {
     const pack = await prisma.survey_packs.findUnique({
@@ -61,11 +60,11 @@ packs.get('/:id/rounds', requireAuth, async (c) => {
       include: packListInclude,
     })
     if (!pack || !pack.is_active) return c.json({ error: 'Pack not found' }, 404)
-    return c.json({ rounds: mapQuestionsToRounds(pack.questions) })
+    return c.json({ questions: serializePackQuestions(pack.questions) })
   } catch (error) {
-    console.error('GET /api/survey-showdown/packs/:id/rounds error:', error)
+    console.error('GET /api/survey-showdown/packs/:id/questions error:', error)
     return c.json({ error: 'Internal server error' }, 500)
   }
 })
 
-export default packs
+export default surveyPacks

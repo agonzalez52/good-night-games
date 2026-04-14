@@ -1,15 +1,22 @@
+import { customSurveyAnswerId, postJudge } from "@/lib/api/survey-showdown/judge";
+
 // ─── TOKENS ───────────────────────────────────────────────────────────────────
 export const TOKENS_PER_GAME = 2;
 export const MAX_CUSTOM_SURVEYS = 40;
 
 // ─── SURVEY PACKS ─────────────────────────────────────────────────────────────
-// Catalog + rounds come from GET /api/survey-showdown/packs and mergeSurveyPacksForGame
-// (see frontend/src/lib/api/survey-showdown/packs.ts). Premium `rounds` load via GET .../packs/:id/rounds.
-// Round: { question: string, answers: { text: string, points: number }[] }
+// Catalog + questions come from GET /api/survey-showdown/packs and mergeSurveyPacksForGame
+// (see frontend/src/lib/api/survey-showdown/survey-packs.ts). Premium questions load via GET .../packs/:id/questions.
+// Answer.id is survey_answers.id or custom QA hash; SurveyQuestion.id is survey_questions.id or client-generated for custom/import.
 
-export type Answer = { text: string; points: number };
-export type Round = { question: string; answers: Answer[] };
-export type Pack = { id: string; name: string; description: string; rounds: Round[] };
+export type Answer = { id: string; answer: string; points: number };
+export interface SurveyQuestion {
+  id: string
+  question: string
+  answers: Answer[]
+}
+
+export type Pack = { id: string; name: string; description: string; questions: SurveyQuestion[] };
 /** Mirrors `survey_packs` rows for bundled content; `is_free` matches the DB column. */
 export interface SurveyPack extends Pack {
   is_free: boolean;
@@ -38,33 +45,46 @@ export type GameHistoryRecord = {
 
 // ─── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
 
-export function customSurveyToRounds(survey: CustomSurvey): Round[] {
-  return survey.questions.map(q => ({ question: q.question, answers: q.answers }));
+function newSurveyQuestionClientId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  return `q-${Math.random().toString(36).slice(2, 12)}`
 }
 
-export function resolvePackRounds(
+export function customSurveyToQuestions(survey: CustomSurvey): SurveyQuestion[] {
+  return survey.questions.map((q) => ({
+    id: q.id?.trim() || newSurveyQuestionClientId(),
+    question: q.question,
+    answers: q.answers.map((a) => ({
+      id: a.id?.trim() || customSurveyAnswerId(q.question, a.answer),
+      answer: a.answer,
+      points: a.points,
+    })),
+  }))
+}
+
+export function resolvePackQuestions(
   packId: string,
   customSurveys: CustomSurvey[],
   customCollections: CustomCollection[],
   surveyPacks: SurveyPack[]
-): Round[] {
+): SurveyQuestion[] {
   const FREE_PACKS = surveyPacks.filter(p => p.is_free);
   const PREMIUM_PACKS = surveyPacks.filter(p => !p.is_free);
-  const fallbackRounds = FREE_PACKS[0]?.rounds ?? [];
-  const allCustom = customSurveys.flatMap(customSurveyToRounds);
+  const fallbackQuestions = FREE_PACKS[0]?.questions ?? [];
+  const allCustom = customSurveys.flatMap(customSurveyToQuestions);
   if (packId === "random") {
-    const base = [...FREE_PACKS.flatMap(p => p.rounds), ...PREMIUM_PACKS.flatMap(p => p.rounds)];
+    const base = [...FREE_PACKS.flatMap(p => p.questions), ...PREMIUM_PACKS.flatMap(p => p.questions)];
     return allCustom.length ? [...allCustom, ...base] : base;
   }
-  if (packId === "custom_all") return allCustom.length ? allCustom : fallbackRounds;
-  const fp = FREE_PACKS.find(p => p.id === packId); if (fp) return fp.rounds;
-  const pp = PREMIUM_PACKS.find(p => p.id === packId); if (pp) return pp.rounds;
+  if (packId === "custom_all") return allCustom.length ? allCustom : fallbackQuestions;
+  const fp = FREE_PACKS.find(p => p.id === packId); if (fp) return fp.questions;
+  const pp = PREMIUM_PACKS.find(p => p.id === packId); if (pp) return pp.questions;
   const coll = customCollections.find(c => c.id === packId);
   if (coll) {
-    const r = customSurveys.filter(s => s.collectionId === coll.id).flatMap(customSurveyToRounds);
-    return r.length ? r : fallbackRounds;
+    const r = customSurveys.filter(s => s.collectionId === coll.id).flatMap(customSurveyToQuestions);
+    return r.length ? r : fallbackQuestions;
   }
-  return fallbackRounds;
+  return fallbackQuestions;
 }
 
 export function shuffleArray<T>(arr: T[]): T[] {
@@ -76,77 +96,73 @@ export function shuffleArray<T>(arr: T[]): T[] {
   return a;
 }
 
-export function normalize(str: string): string {
-  return str.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+export function normalize(str: string | null | undefined): string {
+  if (str == null) return "";
+  return String(str).toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
 }
 
-export function levenshtein(a: string, b: string): number {
-  const m = a.length, n = b.length;
-  const dp = Array.from({ length: m + 1 }, (_, i) =>
-    Array.from({ length: n + 1 }, (_, j) => i === 0 ? j : j === 0 ? i : 0)
-  );
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-  return dp[m][n];
-}
-
-export function checkAnswerFast(input: string, answers: Answer[], revealedIndices: number[]): number | null {
+/** Normalized string equality only — used for signed-in (before AI) and signed-out matching. */
+export function checkAnswerExact(input: string, answers: Answer[], revealedIndices: number[]): number | null {
   const norm = normalize(input);
   if (!norm) return null;
   for (let i = 0; i < answers.length; i++) {
     if (revealedIndices.includes(i)) continue;
-    const target = normalize(answers[i].text);
+    const answerText = answers[i]?.answer;
+    if (answerText == null || answerText === '') continue;
+    const target = normalize(answerText);
     if (norm === target) return i;
-    if (target.includes(norm) || norm.includes(target)) return i;
-    const iw = norm.split(" ").filter(w => w.length > 2);
-    const tw = target.split(" ").filter(w => w.length > 2);
-    const overlap = iw.filter(w => tw.some(t => t.includes(w) || w.includes(t)));
-    if (overlap.length > 0 && overlap.length >= Math.min(iw.length, tw.length) * 0.6) return i;
-    if (target.length <= 20 && levenshtein(norm, target) <= 3) return i;
   }
   return null;
 }
 
-export function parseCustomData(text: string): Round[] | null {
+function coerceParsedQuestion(r: { id?: unknown; question?: unknown; answers?: unknown }): SurveyQuestion {
+  const questionText = String(r.question ?? '')
+  const answersIn = Array.isArray(r.answers) ? r.answers : []
+  const idRaw = r.id
+  const id = typeof idRaw === 'string' && idRaw.trim() ? idRaw.trim() : newSurveyQuestionClientId()
+  return {
+    id,
+    question: questionText,
+    answers: answersIn.map((a: { id?: unknown; answer?: unknown; points?: unknown }) => {
+      const answer = String((a as { answer?: unknown }).answer ?? '')
+      const answerIdRaw = (a as { id?: unknown }).id
+      const answerId = typeof answerIdRaw === 'string' && answerIdRaw.trim() ? answerIdRaw.trim() : customSurveyAnswerId(questionText, answer)
+      return {
+        id: answerId,
+        answer,
+        points: typeof a.points === 'number' ? a.points : Number(a.points) || 0,
+      }
+    }),
+  }
+}
+
+export function parseCustomData(text: string): SurveyQuestion[] | null {
   try {
     const d = JSON.parse(text);
-    if (Array.isArray(d)) return d;
-    if (d.rounds) return d.rounds;
-    return null;
+    const raw = Array.isArray(d) ? d : d.questions && Array.isArray(d.questions) ? d.questions : null;
+    if (!raw) return null;
+    return raw.map((r: { id?: unknown; question?: unknown; answers?: unknown }) => coerceParsedQuestion(r));
   } catch { return null; }
 }
 
-// Phase 8: replace this function body with fetch('POST /api/survey-showdown/judge', ...)
-// The backend handles caching and rate limiting. Remove apiKey param entirely at that point.
+/**
+ * Signed in: exact normalized match, else POST /api/survey-showdown/judge.
+ * Signed out: exact normalized match only (no AI).
+ */
 export async function judgeAnswer(
   input: string,
   answers: Answer[],
   revealedIndices: number[],
-  apiKey: string
+  getAccessToken: () => Promise<string | null>
 ): Promise<number | null> {
-  if (!input.trim()) return null;
-  const fast = checkAnswerFast(input, answers, revealedIndices);
-  if (fast !== null) return fast;
-  if (!apiKey) return null;
-  const candidates = answers.map((a, i) => ({ i, text: a.text })).filter(({ i }) => !revealedIndices.includes(i));
-  if (candidates.length === 0) return null;
-  const candidateList = candidates.map(({ i, text }) => `${i}: "${text}"`).join("\n");
-  const prompt = `You are judging a Survey Showdown game. The player answered: "${input}"\n\nThe survey answers on the board are:\n${candidateList}\n\nDoes the player's answer match any of the survey answers in meaning? Consider synonyms, common phrases, and reasonable equivalents.\n\nReply with ONLY the number of the matching answer index, or "none" if there is no match. No explanation.`;
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 10, messages: [{ role: "user", content: prompt }] }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const reply = (data.content?.[0]?.text || "").trim().toLowerCase();
-    if (reply === "none" || reply === "") return null;
-    const idx = parseInt(reply, 10);
-    if (!isNaN(idx) && candidates.some(c => c.i === idx)) return idx;
-  } catch (e) { console.warn("AI judge failed:", e); }
-  return null;
+  if (!input?.trim()) return null;
+  const exact = checkAnswerExact(input, answers, revealedIndices);
+  if (exact !== null) return exact;
+  const token = await getAccessToken();
+  if (!token) return null;
+  const answerIds = answers.map(a => a.id?.trim()).filter(Boolean) as string[];
+  if (answerIds.length !== answers.length) return null;
+  return postJudge(token, input.trim(), answerIds, answers, revealedIndices);
 }
 
 // ─── SOUNDS ───────────────────────────────────────────────────────────────────

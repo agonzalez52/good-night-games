@@ -13,6 +13,7 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import type { CurrentUser } from '@/lib/constants'
+import { getTokenBundles } from '@/lib/api/tokens'
 import { useTokenBalance } from '@/hooks/useTokenBalance'
 
 /**
@@ -146,7 +147,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 await verifyEmailInFlight.current
               }
               const profile = await fetchUserProfile(session)
-              if (!cancelled) setCurrentUser(profile)
+              if (!cancelled) {
+                setCurrentUser(profile)
+                if (profile) void getTokenBundles().catch(() => {})
+              }
             } finally {
               if (!cancelled) {
                 setLoading(false)

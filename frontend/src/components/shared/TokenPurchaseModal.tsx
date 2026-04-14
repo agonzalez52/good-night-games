@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import { loadStripe } from '@stripe/stripe-js'
 import TokenSVG from '@/components/shared/TokenSVG'
@@ -15,6 +15,56 @@ import {
 
 const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ''
 const stripePromise = stripePublishableKey !== '' ? loadStripe(stripePublishableKey) : null
+
+const BUNDLE_SKELETON_COUNT = 3
+
+/** Matches FaceOff/Board active bar: gradient + background-size so global `shimmer` keyframes sweep visibly. */
+const bundleCardShimmerLayer: CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  pointerEvents: 'none',
+  background: 'linear-gradient(90deg, transparent, rgba(240, 165, 0, 0.14), transparent)',
+  backgroundSize: '200% 100%',
+  animation: 'shimmer 1.8s ease-in-out infinite',
+}
+
+function BundleCardSkeleton({ staggerIndex }: { staggerIndex: number }) {
+  return (
+    <div
+      style={{
+        position: 'relative',
+        borderRadius: 12,
+        padding: '14px 16px',
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          ...bundleCardShimmerLayer,
+          animationDelay: `${staggerIndex * 0.14}s`,
+        }}
+        aria-hidden
+      />
+      <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, background: 'var(--surface)', position: 'relative', zIndex: 1 }} aria-hidden />
+      <div style={{ flex: 1, minWidth: 0, position: 'relative', zIndex: 1 }}>
+        <div style={{ height: 14, width: 'min(200px, 58%)', borderRadius: 7, background: 'var(--surface-2)' }} aria-hidden />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, position: 'relative', zIndex: 1 }} aria-hidden>
+        <div style={{ width: 14, height: 14, borderRadius: 4, background: 'var(--surface-2)' }} />
+        <div style={{ width: 40, height: 24, borderRadius: 6, background: 'var(--surface-2)' }} />
+      </div>
+      <div style={{ flexShrink: 0, minWidth: 52, position: 'relative', zIndex: 1 }} aria-hidden>
+        <div style={{ width: 48, height: 11, borderRadius: 5, background: 'var(--surface-2)', marginLeft: 'auto', marginBottom: 5 }} />
+        <div style={{ width: 40, height: 17, borderRadius: 6, background: 'var(--surface-2)', marginLeft: 'auto' }} />
+      </div>
+    </div>
+  )
+}
 
 interface PaymentStepBodyProps {
   accessToken: string
@@ -256,7 +306,11 @@ export default function TokenPurchaseModal({ onClose, onPurchase, currentBalance
         }}>
 
         {bundlesLoading && (
-          <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: 24 }}>Loading packs…</div>
+          <div role="status" aria-busy="true" aria-label="Loading token packs" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+            {Array.from({ length: BUNDLE_SKELETON_COUNT }, (_, i) => (
+              <BundleCardSkeleton key={i} staggerIndex={i} />
+            ))}
+          </div>
         )}
         {!bundlesLoading && bundlesError && (
           <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--red)', textAlign: 'center', padding: 16 }}>{bundlesError}</div>

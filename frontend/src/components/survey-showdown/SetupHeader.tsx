@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import TokenSVG from '@/components/shared/TokenSVG'
 import AuthModal from '@/components/shared/AuthModal'
 import type { CurrentUser, CustomSurvey, CustomCollection } from '@/lib/constants'
-import type { SurveyPackFreeListItem, SurveyPackPremiumListItem } from '@/lib/api/survey-showdown/packs'
+import type { SurveyPackFreeListItem, SurveyPackPremiumListItem } from '@/lib/api/survey-showdown/survey-packs'
 
 const isMockMode = process.env.NEXT_PUBLIC_MOCK_MODE === 'true'
 
@@ -151,7 +151,7 @@ export function HowToPlayModal({ onClose }: { onClose: () => void }) {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 26, color: '#F0A500', letterSpacing: '0.02em' }}>How to Play</div>
-            <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>Family Feud-style. No host required.</div>
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>No host required.</div>
           </div>
           <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 8, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>✕</button>
         </div>

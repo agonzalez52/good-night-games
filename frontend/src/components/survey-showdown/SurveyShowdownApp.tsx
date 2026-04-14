@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import SetupScreen from '@/components/survey-showdown/SetupScreen'
@@ -14,16 +14,16 @@ import { ConversionModal } from '@/components/survey-showdown/SetupHeader'
 import { createClient } from '@/lib/supabase/client'
 import {
   getPacks,
-  getPackRounds,
+  getPackQuestions,
   mergeSurveyPacksForGame,
   type GetPacksResponse,
-} from '@/lib/api/survey-showdown/packs'
+} from '@/lib/api/survey-showdown/survey-packs'
 import { spendTokens } from '@/lib/api/tokens'
 import {
-  TOKENS_PER_GAME, resolvePackRounds,
+  TOKENS_PER_GAME, resolvePackQuestions,
   shuffleArray, playCoinCollect,
 } from '@/lib/constants'
-import type { CurrentUser, CustomSurvey, CustomCollection, GameHistoryRecord, Round } from '@/lib/constants'
+import type { CurrentUser, CustomSurvey, CustomCollection, GameHistoryRecord, SurveyQuestion } from '@/lib/constants'
 
 interface FlyingCoin {
   id: number
@@ -57,7 +57,7 @@ export default function SurveyShowdownApp() {
     if (searchParams.get('recovery') !== 'true') return
     recoveryOpened.current = true
     setShowRecoveryModal(true)
-    router.replace('/games/survey-showdown', { scroll: false })
+    router.replace('/survey-showdown', { scroll: false })
   }, [searchParams, router])
 
   const [screen, setScreen] = useState<'setup' | 'faceoff' | 'board'>('setup')
@@ -67,14 +67,17 @@ export default function SurveyShowdownApp() {
   const [timerSecs, setTimerSecs] = useState(5)
   const [controllingTeam, setControllingTeam] = useState(0)
   const [faceOffAnswerIndex, setFaceOffAnswerIndex] = useState<number | null>(null)
-  const [shuffledRounds, setShuffledRounds] = useState<ReturnType<typeof resolvePackRounds>>([])
-  const [apiKey] = useState('') // Phase 8: remove entirely — judge moves to backend
+  const [shuffledQuestions, setShuffledQuestions] = useState<SurveyQuestion[]>([])
+  const getJudgeAccessToken = useCallback(async () => {
+    const { data: { session } } = await createClient().auth.getSession()
+    return session?.access_token ?? null
+  }, [])
 
-  // Pack catalog (GET /api/survey-showdown/packs) + cached premium rounds after auth fetch
+  // Pack catalog (GET /api/survey-showdown/packs) + cached premium questions after auth fetch
   const [packs, setPacks] = useState<GetPacksResponse | null>(null)
   const [packsLoading, setPacksLoading] = useState(true)
   const [packsError, setPacksError] = useState<string | null>(null)
-  const [premiumRoundsCache, setPremiumRoundsCache] = useState<Record<string, Round[]>>({})
+  const [premiumQuestionsCache, setPremiumQuestionsCache] = useState<Record<string, SurveyQuestion[]>>({})
   const [spendConfirmLoading, setSpendConfirmLoading] = useState(false)
   const [spendConfirmError, setSpendConfirmError] = useState<string | null>(null)
 
@@ -118,22 +121,22 @@ export default function SurveyShowdownApp() {
   }, [packs, selectedPackId])
 
   const mergedSurveyPacks = useMemo(
-    () => mergeSurveyPacksForGame(packs?.free ?? [], packs?.premium ?? [], premiumRoundsCache),
-    [packs?.free, packs?.premium, premiumRoundsCache]
+    () => mergeSurveyPacksForGame(packs?.free ?? [], packs?.premium ?? [], premiumQuestionsCache),
+    [packs?.free, packs?.premium, premiumQuestionsCache]
   )
 
-  const packRounds = useMemo(
-    () => resolvePackRounds(selectedPackId, customSurveys, customCollections, mergedSurveyPacks),
+  const packQuestions = useMemo(
+    () => resolvePackQuestions(selectedPackId, customSurveys, customCollections, mergedSurveyPacks),
     [selectedPackId, customSurveys, customCollections, mergedSurveyPacks]
   )
 
   const selectedPremiumMeta = packs?.premium.find(p => p.id === selectedPackId)
-  const setupRoundCountCap = selectedPremiumMeta?.round_count ?? 0
+  const setupRoundCountCap = selectedPremiumMeta?.question_count ?? 0
 
   const freePackIds = packs?.free ?? []
   const premiumPackIds = packs?.premium ?? []
 
-  const activeRounds = shuffledRounds.length ? shuffledRounds : packRounds.slice(0, numRounds)
+  const activeQuestions = shuffledQuestions.length ? shuffledQuestions : packQuestions.slice(0, numRounds)
 
   function handleSignIn(user: CurrentUser) {
     setAuthUser(user)
@@ -229,7 +232,7 @@ export default function SurveyShowdownApp() {
       setSpendConfirmLoading(true)
     }
     try {
-      let cache = { ...premiumRoundsCache }
+      let cache = { ...premiumQuestionsCache }
       const needsPremiumFetch =
         (selectedPackId === 'random' && packs.premium.some(p => !cache[p.id]?.length)) ||
         (packs.premium.some(p => p.id === selectedPackId) && !cache[selectedPackId]?.length)
@@ -244,19 +247,19 @@ export default function SurveyShowdownApp() {
         if (selectedPackId === 'random') {
           for (const p of packs.premium) {
             if (cache[p.id]?.length) continue
-            const { rounds } = await getPackRounds(p.id, token)
-            cache[p.id] = rounds
+            const { questions } = await getPackQuestions(p.id, token)
+            cache[p.id] = questions
           }
         } else if (packs.premium.some(p => p.id === selectedPackId) && !cache[selectedPackId]?.length) {
-          const { rounds } = await getPackRounds(selectedPackId, token)
-          cache = { ...cache, [selectedPackId]: rounds }
+          const { questions } = await getPackQuestions(selectedPackId, token)
+          cache = { ...cache, [selectedPackId]: questions }
         }
-        setPremiumRoundsCache(cache)
+        setPremiumQuestionsCache(cache)
       }
 
       const merged = mergeSurveyPacksForGame(packs.free, packs.premium, cache)
-      const fullRounds = resolvePackRounds(selectedPackId, customSurveys, customCollections, merged)
-      if (!fullRounds.length) {
+      const fullQuestions = resolvePackQuestions(selectedPackId, customSurveys, customCollections, merged)
+      if (!fullQuestions.length) {
         if (usedTokens) setSpendConfirmError('No questions available for this pack.')
         return
       }
@@ -280,7 +283,7 @@ export default function SurveyShowdownApp() {
       setIsTokenGame(!!usedTokens)
       setTeams([{ name: t1, score: 0 }, { name: t2, score: 0 }])
       setTimerSecs(secs); setNumRounds(nr); setCurrentRound(0)
-      setShuffledRounds(shuffleArray(fullRounds).slice(0, nr))
+      setShuffledQuestions(shuffleArray(fullQuestions).slice(0, nr))
       setScreen('faceoff')
       setPendingGame(null)
     } catch {
@@ -311,13 +314,13 @@ export default function SurveyShowdownApp() {
   function handleNextRound() { setCurrentRound(r => r + 1); setScreen('faceoff') }
 
   function handleSkipQuestion() {
-    const usedInOtherRounds = new Set(shuffledRounds.slice(0, currentRound).map(r => r.question))
-    const pool = packRounds.filter(r => !usedInOtherRounds.has(r.question))
+    const usedIds = new Set(shuffledQuestions.slice(0, currentRound).map((q) => q.id))
+    const pool = packQuestions.filter((q) => !usedIds.has(q.id))
     if (pool.length <= 1) return
-    const currentQuestion = shuffledRounds[currentRound]?.question
-    const currentIdx = pool.findIndex(r => r.question === currentQuestion)
+    const currentId = shuffledQuestions[currentRound]?.id
+    const currentIdx = pool.findIndex((q) => q.id === currentId)
     const nextIdx = (currentIdx + 1) % pool.length
-    setShuffledRounds(prev => prev.map((r, i) => i === currentRound ? pool[nextIdx] : r))
+    setShuffledQuestions((prev) => prev.map((r, i) => (i === currentRound ? pool[nextIdx] : r)))
   }
 
   function getPackName(id: string) {
@@ -356,7 +359,7 @@ export default function SurveyShowdownApp() {
     <>
       {screen === 'setup' && (
         <SetupScreen
-          onStart={startGame} packRounds={packRounds}
+          onStart={startGame} packQuestions={packQuestions}
           setupRoundCountCap={setupRoundCountCap}
           packsLoading={packsLoading}
           packsError={packsError}
@@ -374,23 +377,23 @@ export default function SurveyShowdownApp() {
           gameHistory={gameHistory}
         />
       )}
-      {screen === 'faceoff' && activeRounds[currentRound] && (
+      {screen === 'faceoff' && activeQuestions[currentRound] && (
         <FaceOffScreen
-          round={activeRounds[currentRound]} teams={teams}
+          currentQuestion={activeQuestions[currentRound]} teams={teams}
           onWinFaceOff={handleFaceOffWin}
           roundNumber={currentRound + 1} totalRounds={numRounds}
           timerSecs={timerSecs} menuProps={menuProps}
-          apiKey={apiKey} onSkip={handleSkipQuestion}
+          getJudgeAccessToken={getJudgeAccessToken} onSkip={handleSkipQuestion}
         />
       )}
-      {screen === 'board' && activeRounds[currentRound] && (
+      {screen === 'board' && activeQuestions[currentRound] && (
         <BoardScreen
-          round={activeRounds[currentRound]} teams={teams}
+          currentQuestion={activeQuestions[currentRound]} teams={teams}
           controllingTeam={controllingTeam} faceOffAnswerIndex={faceOffAnswerIndex}
           onRoundEnd={handleRoundEnd}
           roundNumber={currentRound + 1} totalRounds={numRounds} numRounds={numRounds}
           menuProps={menuProps} onNextRound={handleNextRound}
-          onNewGame={handleNewGame} apiKey={apiKey} isTokenGame={isTokenGame}
+          onNewGame={handleNewGame} getJudgeAccessToken={getJudgeAccessToken} isTokenGame={isTokenGame}
         />
       )}
 

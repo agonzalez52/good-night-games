@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Russo+One&family=DM+Sans:ital,wght@0,400;0,500;0,600&family=Bebas+Neue&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,400;0,500;0,600&family=Exo+2:wght@400;500;600;700;800&family=Outfit:wght@800&display=swap');
 
 :root {
   --bg: #060914;
@@ -23,9 +23,10 @@
   --text: #EEF2FF;
   --text-muted: #A0B4CC;
   --text-faint: #6677AA;
-  --font-display: 'Russo One', sans-serif;
+  --font-display: 'Exo 2', sans-serif;
   --font-score: 'Bebas Neue', sans-serif;
   --font-body: 'DM Sans', sans-serif;
+  --font-outfit: 'Outfit', sans-serif;
   --radius-sm: 8px;
   --radius: 14px;
   --radius-lg: 20px;

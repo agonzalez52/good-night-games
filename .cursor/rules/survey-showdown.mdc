@@ -69,7 +69,7 @@ Each subdirectory has its own package.json and dependencies installed independen
 
 ### Typography
 
-- `--font-display: 'Russo One', sans-serif` — headings, labels, scores, buttons
+- `--font-display: 'Exo 2', sans-serif` — headings, labels, scores, buttons
 - `--font-score: 'Bebas Neue', sans-serif` — numeric scores, timer, points
 - `--font-body: 'DM Sans', sans-serif` — body copy, inputs, descriptions
 - These are the ONLY fonts used in this project. Never suggest Inter, Roboto, system fonts, or any other typeface.
@@ -119,7 +119,7 @@ startGame(t1, t2, secs, nr)
 commitGame(t1, t2, secs, nr, usedTokens)
   ├── Deducts TOKENS_PER_GAME (2) if usedTokens === true
   ├── Sets isTokenGame flag (suppresses ads for this game)
-  ├── Shuffles pack rounds
+  ├── Shuffles pack questions (playable question list for the session)
   └── setScreen("faceoff")
 ```
 
@@ -323,7 +323,7 @@ and intentional in the frontend until Phase 6.
 2. **Bypassing startGame** — never call commitGame directly from UI events
 3. **Mutating tokens in child components** — always call `onTokensUpdated` up the tree
 4. **Inline colors** — always use CSS variables for design system colors
-5. **Wrong fonts** — only Russo One, Bebas Neue, and DM Sans
+5. **Wrong fonts** — only Exo 2, Bebas Neue, and DM Sans
 6. **Mock buttons without NEXT_PUBLIC_MOCK_MODE guard** — all simulate/mock buttons must be gated
 7. **Missing game_id** — every history write and judge cache entry requires game_id
 8. **Querying surveys without RLS** — always filter by user_id; never return other users' surveys

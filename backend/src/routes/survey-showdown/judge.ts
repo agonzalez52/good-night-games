@@ -9,6 +9,26 @@ const GAME_ID = 'survey_showdown'
 
 const judge = new Hono<{ Variables: AuthVariables }>()
 
+function resolveCachedIndex(
+  answers: { answer: string; points: number }[],
+  answerIds: string[],
+  revealed: Set<number>,
+  cached: { matched_answer: string | null; is_match: boolean; survey_answer_id: string }
+): number | null {
+  if (!cached.is_match) return null
+  for (let i = 0; i < answers.length; i++) {
+    if (revealed.has(i)) continue
+    if (answerIds[i] === cached.survey_answer_id) return i
+  }
+  const matchedAnswer = cached.matched_answer
+  if (!matchedAnswer) return null
+  for (let i = 0; i < answers.length; i++) {
+    if (revealed.has(i)) continue
+    if (answers[i].answer === matchedAnswer) return i
+  }
+  return null
+}
+
 judge.post(
   '/',
   requireAuth,
@@ -19,40 +39,70 @@ judge.post(
       const parsed = judgeSchema.safeParse(body)
       if (!parsed.success) return c.json({ error: 'Invalid request' }, 400)
 
-      const { input, surveyId, answers } = parsed.data
+      const { input, answerIds, answers, revealedIndices } = parsed.data
+      if (answerIds.length !== answers.length) {
+        return c.json({ error: 'answerIds must align with answers' }, 400)
+      }
       const normalizedInput = input.toLowerCase().trim()
+      const revealed = new Set(revealedIndices)
+      const hiddenAnswerIds = answerIds.filter((_, i) => !revealed.has(i))
+      const hiddenAnswerIdsUnique = [...new Set(hiddenAnswerIds)]
 
-      // Check cache first
-      const cached = await prisma.judge_cache.findUnique({
-        where: {
-          game_id_input_text_survey_id: {
-            game_id: GAME_ID,
-            input_text: normalizedInput,
-            survey_id: surveyId,
-          },
-        },
-      })
+      const candidates = answers
+        .map((a, i) => ({ i, text: a.answer }))
+        .filter(({ i }) => !revealed.has(i))
 
-      if (cached) {
-        return c.json({
-          isMatch: cached.is_match,
-          matchedAnswer: cached.matched_answer ?? null,
-        })
+      if (candidates.length === 0) {
+        return c.json({ isMatch: false, matchedAnswer: null, matchedIndex: null })
       }
 
-      // Cache miss — call Haiku
-      const candidateList = answers
-        .map((a, i) => `${i}: "${a.answer}"`)
-        .join('\n')
+      if (hiddenAnswerIds.length > 0) {
+        const cachedRows = await prisma.judge_cache.findMany({
+          where: {
+            game_id: GAME_ID,
+            input_text: normalizedInput,
+            survey_answer_id: { in: hiddenAnswerIds },
+            is_match: true,
+          },
+        })
+        for (const cached of cachedRows) {
+          const matchedIndex = resolveCachedIndex(answers, answerIds, revealed, cached)
+          if (matchedIndex !== null) {
+            return c.json({
+              isMatch: true,
+              matchedAnswer: cached.matched_answer ?? null,
+              matchedIndex,
+            })
+          }
+        }
+      }
+
+      if (hiddenAnswerIdsUnique.length > 0) {
+        const negativeCached = await prisma.judge_cache.count({
+          where: {
+            game_id: GAME_ID,
+            input_text: normalizedInput,
+            survey_answer_id: { in: hiddenAnswerIdsUnique },
+            is_match: false,
+          },
+        })
+        if (negativeCached === hiddenAnswerIdsUnique.length) {
+          return c.json({ isMatch: false, matchedAnswer: null, matchedIndex: null })
+        }
+      }
+
+      const candidateList = candidates.map(({ i, text }) => `${i}: "${text}"`).join('\n')
 
       const prompt = `You are judging a Survey Showdown game. The player answered: "${input}"
 
-The survey answers on the board are:
+The survey answers still hidden on the board are (index: text):
 ${candidateList}
 
-Does the player's answer match any of the survey answers in meaning? Consider synonyms, common phrases, and reasonable equivalents.
+Does the player's answer match any of these in meaning? Consider synonyms, common phrases, and reasonable equivalents.
 
-Reply with ONLY the number of the matching answer index, or "none" if there is no match. No explanation.`
+If more than one line is a reasonable match, pick any one of their indices—do not reply "none" just because several could fit.
+
+Reply with ONLY the number of the matching answer index from the list above, or "none" if there is no match. No explanation.`
 
       const message = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
@@ -64,22 +114,59 @@ Reply with ONLY the number of the matching answer index, or "none" if there is n
         .trim()
         .toLowerCase()
 
-      const isMatch = reply !== 'none' && reply !== '' && !isNaN(parseInt(reply))
-      const matchedIndex = isMatch ? parseInt(reply) : null
-      const matchedAnswer = matchedIndex !== null ? (answers[matchedIndex]?.answer ?? null) : null
+      let matchedIndex: number | null = null
+      if (reply !== 'none' && reply !== '') {
+        const parsedIdx = parseInt(reply, 10)
+        if (
+          !Number.isNaN(parsedIdx) &&
+          Number.isInteger(parsedIdx) &&
+          parsedIdx >= 0 &&
+          parsedIdx < answers.length &&
+          !revealed.has(parsedIdx) &&
+          candidates.some(c => c.i === parsedIdx)
+        ) {
+          matchedIndex = parsedIdx
+        }
+      }
 
-      // Store in cache
-      await prisma.judge_cache.create({
-        data: {
-          game_id: GAME_ID,
-          input_text: normalizedInput,
-          survey_id: surveyId,
-          matched_answer: matchedAnswer,
-          is_match: isMatch,
-        },
-      })
+      const isMatch = matchedIndex !== null
+      const matchedAnswer = matchedIndex !== null ? answers[matchedIndex].answer : null
+      if (isMatch && matchedIndex !== null) {
+        const surveyAnswerId = answerIds[matchedIndex]!
+        await prisma.judge_cache.upsert({
+          where: {
+            game_id_input_text_survey_answer_id: {
+              game_id: GAME_ID,
+              input_text: normalizedInput,
+              survey_answer_id: surveyAnswerId,
+            },
+          },
+          create: {
+            game_id: GAME_ID,
+            input_text: normalizedInput,
+            survey_answer_id: surveyAnswerId,
+            matched_answer: matchedAnswer,
+            is_match: true,
+          },
+          update: {
+            matched_answer: matchedAnswer,
+            is_match: true,
+          },
+        })
+      } else if (hiddenAnswerIdsUnique.length > 0) {
+        await prisma.judge_cache.createMany({
+          data: hiddenAnswerIdsUnique.map((survey_answer_id) => ({
+            game_id: GAME_ID,
+            input_text: normalizedInput,
+            survey_answer_id,
+            matched_answer: null,
+            is_match: false,
+          })),
+          skipDuplicates: true,
+        })
+      }
 
-      return c.json({ isMatch, matchedAnswer })
+      return c.json({ isMatch, matchedAnswer, matchedIndex })
     } catch (error) {
       console.error('POST /api/survey-showdown/judge error:', error)
       return c.json({ error: 'Internal server error' }, 500)
