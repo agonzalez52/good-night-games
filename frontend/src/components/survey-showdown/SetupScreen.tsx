@@ -146,7 +146,7 @@ export default function SetupScreen({
                 width: 'calc(100% + clamp(36px, 8vw, 72px))',
                 height: 'clamp(26px, 4.2vw, 44px)',
                 borderRadius: 14,
-                border: '1px solid var(--gold)',
+                border: '5px solid var(--gold)',
                 background: 'transparent',
                 boxSizing: 'border-box',
                 pointerEvents: 'none',
