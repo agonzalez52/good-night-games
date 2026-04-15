@@ -7,7 +7,7 @@ export const MAX_CUSTOM_SURVEYS = 40;
 // ─── SURVEY PACKS ─────────────────────────────────────────────────────────────
 // Catalog + questions come from GET /api/survey-showdown/packs and mergeSurveyPacksForGame
 // (see frontend/src/lib/api/survey-showdown/survey-packs.ts). Premium questions load via GET .../packs/:id/questions.
-// Answer.id is survey_answers.id or custom QA hash; SurveyQuestion.id is survey_questions.id or client-generated for custom/import.
+// Answer.id is su_survey_answers.id or custom QA hash; SurveyQuestion.id is su_survey_questions.id or client-generated for custom/import.
 
 export type Answer = { id: string; answer: string; points: number };
 export interface SurveyQuestion {
@@ -17,7 +17,7 @@ export interface SurveyQuestion {
 }
 
 export type Pack = { id: string; name: string; description: string; questions: SurveyQuestion[] };
-/** Mirrors `survey_packs` rows for bundled content; `is_free` matches the DB column. */
+/** Mirrors `su_survey_packs` rows for bundled content; `is_free` matches the DB column. */
 export interface SurveyPack extends Pack {
   is_free: boolean;
 }

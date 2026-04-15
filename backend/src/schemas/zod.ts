@@ -27,7 +27,7 @@ export const createCollectionSchema = z.object({
 
 export const judgeSchema = z.object({
   input: z.string().min(1).max(200),
-  /** Per-slot ids: DB `survey_answers.id` or custom deterministic QA hash; same order as `answers`. */
+  /** Per-slot ids: DB `su_survey_answers.id` or custom deterministic QA hash; same order as `answers`. */
   answerIds: z.array(z.string().min(1).max(200)).min(1).max(16),
   /** Original board indices already revealed; model may only match hidden slots */
   revealedIndices: z.array(z.number().int().min(0)).default([]),

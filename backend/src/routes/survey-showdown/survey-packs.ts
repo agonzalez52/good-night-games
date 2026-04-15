@@ -13,14 +13,14 @@ const packListInclude = {
       answers: { orderBy: { display_order: 'asc' as const } },
     },
   },
-} satisfies Prisma.survey_packsInclude
+} satisfies Prisma.su_survey_packsInclude
 
 // GET /api/survey-showdown/packs
 // Public — no auth required for free packs
 // Returns { free: packs with questions[], premium: metadata + question_count }
 surveyPacks.get('/', async (c) => {
   try {
-    const allPacks = await prisma.survey_packs.findMany({
+    const allPacks = await prisma.su_survey_packs.findMany({
       where: { is_active: true },
       orderBy: { created_at: 'asc' },
       include: packListInclude,
@@ -55,7 +55,7 @@ surveyPacks.get('/', async (c) => {
 surveyPacks.get('/:id/questions', requireAuth, async (c) => {
   const id = c.req.param('id')
   try {
-    const pack = await prisma.survey_packs.findUnique({
+    const pack = await prisma.su_survey_packs.findUnique({
       where: { id },
       include: packListInclude,
     })

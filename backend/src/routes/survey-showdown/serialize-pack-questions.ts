@@ -1,5 +1,5 @@
 /**
- * Maps relational survey_questions / survey_answers rows to the public API
+ * Maps relational su_survey_questions / su_survey_answers rows to the public API
  * `questions` payload: { id, question, answers: [{ id, answer, points }] }.
  */
 

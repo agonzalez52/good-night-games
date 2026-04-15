@@ -10,7 +10,7 @@ const history = new Hono<{ Variables: AuthVariables }>()
 history.use('/*', requireAuth)
 
 // POST /api/survey-showdown/history
-// Creates a game_sessions record + survey_showdown_sessions record
+// Creates a game_sessions record + su_survey_showdown_sessions record
 // Enforces 50-record rolling window per user per game_id
 history.post('/', async (c) => {
   const userId = c.get('userId')
@@ -27,7 +27,7 @@ history.post('/', async (c) => {
         data: { user_id: userId, game_id, completed: true },
       })
 
-      const showdownSession = await tx.survey_showdown_sessions.create({
+      const showdownSession = await tx.su_survey_showdown_sessions.create({
         data: { session_id: session.id, team1, team2, rounds, pack, winner, score1, score2 },
       })
 
@@ -69,7 +69,7 @@ history.get('/', async (c) => {
     })
 
     const sessionIds = sessions.map(s => s.id)
-    const showdownSessions = await prisma.survey_showdown_sessions.findMany({
+    const showdownSessions = await prisma.su_survey_showdown_sessions.findMany({
       where: { session_id: { in: sessionIds } },
     })
 

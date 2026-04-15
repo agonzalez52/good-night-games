@@ -78,7 +78,7 @@ model judge_cache {
   game_id          String
   /// Normalized player guess (lowercased trim).
   input_text       String
-  /// Canonical slot: `survey_answers.id` (pack) or custom `ss:qa:*`.
+  /// Canonical slot: `su_survey_answers.id` (pack) or custom `ss:qa:*`.
   survey_answer_id String
   matched_answer   String?
   /// True = semantic match for this triple; false = cached non-match. When every still-hidden id has `false`, the judge skips Anthropic.
@@ -106,40 +106,40 @@ model game_sessions {
   metadata  Json?
 }
 
-model survey_packs {
+model su_survey_packs {
   id          String   @id @default(uuid())
   name        String
   description String
   is_free     Boolean  @default(false)
   is_active   Boolean  @default(true)
   created_at  DateTime @default(now())
-  questions   survey_questions[]
+  questions   su_survey_questions[]
 }
 
-model survey_questions {
+model su_survey_questions {
   id            String           @id @default(uuid())
   pack_id       String
   question      String
   display_order Int
   created_at    DateTime         @default(now())
-  pack          survey_packs     @relation(fields: [pack_id], references: [id], onDelete: Cascade) // lets Prisma navigate from a question to its parent pack
-  answers       survey_answers[] // lets Prisma fetch a question’s child answers
+  pack          su_survey_packs   @relation(fields: [pack_id], references: [id], onDelete: Cascade)
+  answers       su_survey_answers[]
 
   @@index([pack_id, display_order])
 }
 
-model survey_answers {
+model su_survey_answers {
   id            String           @id @default(uuid())
   question_id   String
   answer        String
   points        Int
   display_order Int
-  question      survey_questions @relation(fields: [question_id], references: [id], onDelete: Cascade)
+  question      su_survey_questions @relation(fields: [question_id], references: [id], onDelete: Cascade)
 
   @@index([question_id, display_order])
 }
 
-model custom_surveys {
+model su_custom_surveys {
   id            String   @id @default(uuid())
   user_id       String
   name          String
@@ -149,7 +149,7 @@ model custom_surveys {
   updated_at    DateTime @updatedAt
 }
 
-model custom_survey_collections {
+model su_custom_survey_collections {
   id         String   @id @default(uuid())
   user_id    String
   name       String
@@ -157,7 +157,7 @@ model custom_survey_collections {
   updated_at DateTime @updatedAt
 }
 
-model survey_showdown_sessions {
+model su_survey_showdown_sessions {
   id         String @id @default(uuid())
   session_id String @unique
   team1      String

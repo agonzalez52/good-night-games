@@ -16,11 +16,11 @@ customSurveys.get('/', async (c) => {
   const userId = c.get('userId')
   try {
     const [userSurveys, userCollections] = await Promise.all([
-      prisma.custom_surveys.findMany({
+      prisma.su_custom_surveys.findMany({
         where: { user_id: userId },
         orderBy: { created_at: 'asc' },
       }),
-      prisma.custom_survey_collections.findMany({
+      prisma.su_custom_survey_collections.findMany({
         where: { user_id: userId },
         orderBy: { created_at: 'asc' },
       }),
@@ -41,12 +41,12 @@ customSurveys.post('/', async (c) => {
     const parsed = createSurveySchema.safeParse(body)
     if (!parsed.success) return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400)
 
-    const count = await prisma.custom_surveys.count({ where: { user_id: userId } })
+    const count = await prisma.su_custom_surveys.count({ where: { user_id: userId } })
     if (count >= MAX_CUSTOM_SURVEYS) {
       return c.json({ error: `Survey limit of ${MAX_CUSTOM_SURVEYS} reached` }, 403)
     }
 
-    const survey = await prisma.custom_surveys.create({
+    const survey = await prisma.su_custom_surveys.create({
       data: {
         user_id: userId,
         name: parsed.data.name,
@@ -67,7 +67,7 @@ customSurveys.put('/:id', async (c) => {
   const userId = c.get('userId')
   const id = c.req.param('id')
   try {
-    const existing = await prisma.custom_surveys.findUnique({ where: { id } })
+    const existing = await prisma.su_custom_surveys.findUnique({ where: { id } })
     if (!existing || existing.user_id !== userId) {
       return c.json({ error: 'Not found' }, 404)
     }
@@ -76,7 +76,7 @@ customSurveys.put('/:id', async (c) => {
     const parsed = createSurveySchema.safeParse(body)
     if (!parsed.success) return c.json({ error: 'Invalid request' }, 400)
 
-    const updated = await prisma.custom_surveys.update({
+    const updated = await prisma.su_custom_surveys.update({
       where: { id },
       data: {
         name: parsed.data.name,
@@ -97,11 +97,11 @@ customSurveys.delete('/:id', async (c) => {
   const userId = c.get('userId')
   const id = c.req.param('id')
   try {
-    const existing = await prisma.custom_surveys.findUnique({ where: { id } })
+    const existing = await prisma.su_custom_surveys.findUnique({ where: { id } })
     if (!existing || existing.user_id !== userId) {
       return c.json({ error: 'Not found' }, 404)
     }
-    await prisma.custom_surveys.delete({ where: { id } })
+    await prisma.su_custom_surveys.delete({ where: { id } })
     return c.json({ success: true })
   } catch (error) {
     console.error('DELETE /api/survey-showdown/custom-surveys/:id error:', error)
@@ -117,7 +117,7 @@ customSurveys.post('/collections', async (c) => {
     const parsed = createCollectionSchema.safeParse(body)
     if (!parsed.success) return c.json({ error: 'Invalid request' }, 400)
 
-    const collection = await prisma.custom_survey_collections.create({
+    const collection = await prisma.su_custom_survey_collections.create({
       data: { user_id: userId, name: parsed.data.name },
     })
     return c.json(collection, 201)
@@ -132,7 +132,7 @@ customSurveys.put('/collections/:id', async (c) => {
   const userId = c.get('userId')
   const id = c.req.param('id')
   try {
-    const existing = await prisma.custom_survey_collections.findUnique({ where: { id } })
+    const existing = await prisma.su_custom_survey_collections.findUnique({ where: { id } })
     if (!existing || existing.user_id !== userId) {
       return c.json({ error: 'Not found' }, 404)
     }
@@ -141,7 +141,7 @@ customSurveys.put('/collections/:id', async (c) => {
     const parsed = createCollectionSchema.safeParse(body)
     if (!parsed.success) return c.json({ error: 'Invalid request' }, 400)
 
-    const updated = await prisma.custom_survey_collections.update({
+    const updated = await prisma.su_custom_survey_collections.update({
       where: { id },
       data: { name: parsed.data.name },
     })
@@ -158,18 +158,18 @@ customSurveys.delete('/collections/:id', async (c) => {
   const userId = c.get('userId')
   const id = c.req.param('id')
   try {
-    const existing = await prisma.custom_survey_collections.findUnique({ where: { id } })
+    const existing = await prisma.su_custom_survey_collections.findUnique({ where: { id } })
     if (!existing || existing.user_id !== userId) {
       return c.json({ error: 'Not found' }, 404)
     }
 
     // Reassign surveys to uncategorized before deleting the collection
-    await prisma.custom_surveys.updateMany({
+    await prisma.su_custom_surveys.updateMany({
       where: { user_id: userId, collection_id: id },
       data: { collection_id: null },
     })
 
-    await prisma.custom_survey_collections.delete({ where: { id } })
+    await prisma.su_custom_survey_collections.delete({ where: { id } })
     return c.json({ success: true })
   } catch (error) {
     console.error('DELETE /api/survey-showdown/custom-surveys/collections/:id error:', error)
