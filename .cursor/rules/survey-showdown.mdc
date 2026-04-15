@@ -95,6 +95,11 @@ ALWAYS use `<TokenSVG size={n}/>` instead of any coin emoji (🪙) or token text
 Sizes in use: 13, 14, 15, 16, 18, 20, 22, 48px.
 The SVG uses radialGradient id="tokenFill" — do not duplicate this id.
 
+### Data Rendering
+
+When implementing or editing a component that waits for data from an api
+endpoint, the loading state of the component should be represented by a shimmer skeleton unless there is clear reason not to
+
 ---
 
 ## Game Architecture

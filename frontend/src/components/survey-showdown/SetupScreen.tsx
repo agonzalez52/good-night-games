@@ -205,12 +205,10 @@ export default function SetupScreen({
             <div style={{ flex: '0 0 auto', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '14px 16px', textAlign: 'center', minWidth: 140 }} aria-busy={packsLoading}>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 9, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase', marginBottom: 10 }}>🎮 Rounds</div>
               {packsLoading ? (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, marginBottom: 5 }}>
-                    <div style={{ width: 120, height: 36, borderRadius: 10, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} aria-hidden />
-                  </div>
-                  <div style={{ color: 'var(--text-faint)', fontSize: 10, fontFamily: 'var(--font-body)', marginTop: 5 }}>Loading packs…</div>
-                </>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, paddingTop: 2, paddingBottom: 2 }} aria-hidden>
+                  <div style={{ width: 120, height: 36, borderRadius: 10, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} />
+                  <div style={{ width: 72, height: 10, borderRadius: 5, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} />
+                </div>
               ) : (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
