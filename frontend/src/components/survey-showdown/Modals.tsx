@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { CurrentUser, GameHistoryRecord } from '@/lib/constants'
+import { FEEDBACK_MESSAGE_MAX_LENGTH, type CurrentUser, type GameHistoryRecord } from '@/lib/constants'
 
 // ─── FEEDBACK MODAL ───────────────────────────────────────────────────────────
 // Phase 9: replace setTimeout with fetch('POST /api/feedback', { category, message, userId? })
@@ -51,7 +51,7 @@ export function FeedbackModal({ onClose, currentUser }: FeedbackModalProps) {
             </div>
             <div>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 10, letterSpacing: '0.16em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>Message</div>
-              <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="Tell us what's on your mind…" rows={5} style={{ width: '100%', padding: '11px 14px', borderRadius: 10, fontSize: 13, fontFamily: 'var(--font-body)', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text)', resize: 'vertical', outline: 'none', lineHeight: 1.55 }} />
+              <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="Tell us what's on your mind…" rows={5} maxLength={FEEDBACK_MESSAGE_MAX_LENGTH} style={{ width: '100%', padding: '11px 14px', borderRadius: 10, fontSize: 13, fontFamily: 'var(--font-body)', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text)', resize: 'vertical', outline: 'none', lineHeight: 1.55 }} />
             </div>
             <button onClick={handleSubmit} disabled={!message.trim() || loading} style={{ width: '100%', padding: '13px', borderRadius: 12, background: message.trim() ? 'linear-gradient(135deg,#4D7EFF,#2952CC)' : 'rgba(255,255,255,0.04)', color: message.trim() ? '#fff' : 'var(--text-faint)', fontFamily: 'var(--font-display)', fontSize: 14, letterSpacing: '0.08em', border: 'none', boxShadow: message.trim() ? '0 4px 18px rgba(77,126,255,0.3)' : 'none', transition: 'all 0.2s' }}>
               {loading ? 'SENDING…' : 'SEND FEEDBACK'}

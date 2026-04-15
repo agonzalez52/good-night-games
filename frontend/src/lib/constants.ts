@@ -3,6 +3,10 @@ import { customSurveyAnswerId, postJudge } from "@/lib/api/survey-showdown/judge
 // ─── TOKENS ───────────────────────────────────────────────────────────────────
 export const TOKENS_PER_GAME = 2;
 export const MAX_CUSTOM_SURVEYS = 40;
+/** Must match backend `judgeSchema` (`input` max length). */
+export const SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH = 200;
+/** Must match backend `feedbackSchema` (`message` max length). */
+export const FEEDBACK_MESSAGE_MAX_LENGTH = 2000;
 
 // ─── SURVEY PACKS ─────────────────────────────────────────────────────────────
 // Catalog + questions come from GET /api/survey-showdown/packs and mergeSurveyPacksForGame
