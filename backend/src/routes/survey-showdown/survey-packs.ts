@@ -6,7 +6,7 @@ import { serializePackQuestions } from './serialize-pack-questions'
 
 const surveyPacks = new Hono<{ Variables: AuthVariables }>()
 
-const packListInclude = {
+const packQuestionsInclude = {
   questions: {
     orderBy: { display_order: 'asc' as const },
     include: {
@@ -15,29 +15,58 @@ const packListInclude = {
   },
 } satisfies Prisma.su_survey_packsInclude
 
+const getPackListInclude = (now: Date) =>
+  ({
+    ...packQuestionsInclude,
+    tags: {
+      where: {
+        OR: [{ expires_at: null }, { expires_at: { gt: now } }],
+      },
+      orderBy: { created_at: 'asc' as const },
+    },
+  }) satisfies Prisma.su_survey_packsInclude
+
+interface PackTagListRow {
+  id: string
+  label: string
+  color: string | null
+  expires_at: Date | null
+}
+
+const serializePackTags = (tags: PackTagListRow[]) =>
+  tags.map((t) => ({
+    id: t.id,
+    label: t.label,
+    color: t.color,
+    expires_at: t.expires_at,
+  }))
+
 // GET /api/survey-showdown/packs
 // Public — no auth required for free packs
 // Returns { free: packs with questions[], premium: metadata + question_count }
 surveyPacks.get('/', async (c) => {
   try {
+    const now = new Date()
     const allPacks = await prisma.su_survey_packs.findMany({
       where: { is_active: true },
       orderBy: { created_at: 'asc' },
-      include: packListInclude,
+      include: getPackListInclude(now),
     })
 
     const freePacks = allPacks
       .filter((p) => p.is_free)
-      .map(({ questions, ...rest }) => ({
+      .map(({ questions, tags, ...rest }) => ({
         ...rest,
         questions: serializePackQuestions(questions),
+        tags: serializePackTags(tags),
       }))
 
     const premiumPacks = allPacks
       .filter((p) => !p.is_free)
-      .map(({ questions, ...rest }) => ({
+      .map(({ questions, tags, ...rest }) => ({
         ...rest,
         question_count: questions.length,
+        tags: serializePackTags(tags),
       }))
 
     return c.json({
@@ -57,7 +86,7 @@ surveyPacks.get('/:id/questions', requireAuth, async (c) => {
   try {
     const pack = await prisma.su_survey_packs.findUnique({
       where: { id },
-      include: packListInclude,
+      include: packQuestionsInclude,
     })
     if (!pack || !pack.is_active) return c.json({ error: 'Pack not found' }, 404)
     return c.json({ questions: serializePackQuestions(pack.questions) })

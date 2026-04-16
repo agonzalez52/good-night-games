@@ -2,6 +2,14 @@ import type { SurveyPack, SurveyQuestion } from '@/lib/constants'
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
 
+/** Tag row from GET /api/survey-showdown/packs; API only returns non-expired tags (`expires_at` is ISO or null). */
+export interface SurveyPackTag {
+  id: string
+  label: string
+  color: string | null
+  expires_at: string | null
+}
+
 /** Shared fields on survey pack rows from GET /api/survey-showdown/packs (`created_at` is an ISO string over JSON). */
 export type SurveyPackApiBase = {
   id: string
@@ -10,6 +18,7 @@ export type SurveyPackApiBase = {
   is_free: boolean
   is_active: boolean
   created_at: string
+  tags: SurveyPackTag[]
 }
 
 /** Free packs in the list response include inline questions (same shape as `SurveyQuestion` in app code). */

@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import TokenSVG from '@/components/shared/TokenSVG'
 import AuthModal from '@/components/shared/AuthModal'
 import type { CurrentUser, CustomSurvey, CustomCollection } from '@/lib/constants'
-import type { SurveyPackFreeListItem, SurveyPackPremiumListItem } from '@/lib/api/survey-showdown/survey-packs'
+import type { SurveyPackFreeListItem, SurveyPackPremiumListItem, SurveyPackTag } from '@/lib/api/survey-showdown/survey-packs'
+import { PackTagPillsResponsive } from '@/components/survey-showdown/pack-tag-pills'
 
 const isMockMode = process.env.NEXT_PUBLIC_MOCK_MODE === 'true'
 
@@ -55,7 +56,15 @@ interface SurveyPackPickerProps {
   catalogPremium: SurveyPackPremiumListItem[]
 }
 
-export function SurveyPackPicker({ selectedPackId, onToggle, triggerRef, open, customSurveys, customCollections, catalogFree, catalogPremium }: SurveyPackPickerProps) {
+export function SurveyPackPicker({
+  selectedPackId,
+  onToggle,
+  triggerRef,
+  open,
+  customCollections,
+  catalogFree,
+  catalogPremium,
+}: SurveyPackPickerProps) {
   function getLabel(id: string) {
     if (id === 'random') return '🎲 Random Mix'
     if (id === 'custom_all') return '✏ All Custom Surveys'
@@ -65,10 +74,23 @@ export function SurveyPackPicker({ selectedPackId, onToggle, triggerRef, open, c
     const pp = catalogPremium.find(p => p.id === id); if (pp) return pp.name
     return 'Select Surveys'
   }
+  const catalogPack =
+    catalogFree.find(p => p.id === selectedPackId) ??
+    catalogPremium.find(p => p.id === selectedPackId)
+  const catalogTags = catalogPack?.tags?.length ? catalogPack.tags : undefined
+  const primaryLabel = getLabel(selectedPackId)
+
   return (
     <div style={{ width: '100%' }}>
-      <button ref={triggerRef} onClick={onToggle} style={{ width: '100%', padding: '9px 12px', borderRadius: 9, background: 'rgba(255,255,255,0.05)', border: `1px solid ${open ? 'rgba(240,165,0,0.5)' : 'rgba(255,255,255,0.1)'}`, color: 'var(--text)', fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, cursor: 'pointer', transition: 'border-color 0.18s', boxShadow: open ? '0 0 0 3px rgba(240,165,0,0.1)' : 'none' }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getLabel(selectedPackId)}</span>
+      <button ref={triggerRef} onClick={onToggle} style={{ width: '100%', padding: '9px 12px', borderRadius: 9, background: 'rgba(255,255,255,0.05)', border: `1px solid ${open ? 'rgba(240,165,0,0.5)' : 'rgba(255,255,255,0.1)'}`, color: 'var(--text)', fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '0.04em', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, cursor: 'pointer', transition: 'border-color 0.18s', boxShadow: open ? '0 0 0 3px rgba(240,165,0,0.1)' : 'none' }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: 8 }}>
+          <span style={{ flex: '0 1 auto', minWidth: 0, flexShrink: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{primaryLabel}</span>
+          {catalogTags ? (
+            <div style={{ flex: '1 1 0%', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
+              <PackTagPillsResponsive key={selectedPackId} tags={catalogTags} size="compact" align="end" initialMaxVisible={2} />
+            </div>
+          ) : null}
+        </div>
         <span style={{ fontSize: 10, color: 'var(--text-faint)', transition: 'transform 0.18s', transform: open ? 'rotate(180deg)' : 'none', flexShrink: 0 }}>▼</span>
       </button>
     </div>
@@ -99,16 +121,27 @@ export function SurveyPackDropdown({ selectedPackId, onSelectPack, onClose, curr
     <div style={{ fontFamily: 'var(--font-display)', fontSize: 9, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase', padding: '8px 10px 4px', borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: 4 }}>{txt}</div>
   )
 
-  const row = (id: string, name: string, desc: string | null, locked: boolean, extra?: React.ReactNode) => {
+  const row = (id: string, name: string, desc: string | null, locked: boolean, extra?: React.ReactNode, catalogTags?: SurveyPackTag[]) => {
     const isSel = selectedPackId === id
+    const hasPills = Boolean(catalogTags?.length)
+    const showDesc = Boolean(desc?.trim())
     return (
-      <div key={id} onClick={() => handleSelect(id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9, cursor: 'pointer', background: isSel ? 'rgba(240,165,0,0.12)' : 'transparent', transition: 'background 0.15s', opacity: locked ? 0.55 : 1 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: 12, color: isSel ? '#F0A500' : 'var(--text)', letterSpacing: '0.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
-          {desc && <div style={{ fontFamily: 'var(--font-body)', fontSize: 10, color: 'var(--text-faint)', marginTop: 1 }}>{desc}</div>}
+      <div key={id} onClick={() => handleSelect(id)} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 10px', borderRadius: 9, cursor: 'pointer', background: isSel ? 'rgba(240,165,0,0.12)' : 'transparent', transition: 'background 0.15s', opacity: locked ? 0.55 : 1 }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 12, color: isSel ? '#F0A500' : 'var(--text)', letterSpacing: '0.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: '0 1 auto', minWidth: 0 }}>{name}</div>
+            {hasPills && catalogTags && (
+              <div style={{ flex: '1 1 0%', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
+                <PackTagPillsResponsive tags={catalogTags} size="default" align="end" initialMaxVisible={4} />
+              </div>
+            )}
+          </div>
+          {showDesc && (
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 10, color: 'var(--text-faint)', lineHeight: 1.35 }}>{desc}</div>
+          )}
         </div>
         {extra}
-        {isSel && <span style={{ color: '#F0A500', fontSize: 12, flexShrink: 0 }}>✓</span>}
+        {isSel && <span style={{ color: '#F0A500', fontSize: 12, flexShrink: 0, marginTop: 2 }}>✓</span>}
       </div>
     )
   }
@@ -125,13 +158,14 @@ export function SurveyPackDropdown({ selectedPackId, onSelectPack, onClose, curr
         )}
       </>)}
       {sectionLabel('Free')}
-      {catalogFree.map(p => row(p.id, p.name, p.description, false))}
+      {catalogFree.map(p => row(p.id, p.name, p.description, false, undefined, p.tags))}
       {sectionLabel('Tokens Required')}
       {row('random', '🎲 Random Mix', 'Draw from all available surveys', isPremiumLocked,
         <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}><TokenSVG size={14} /></span>
       )}
       {catalogPremium.map(p => row(p.id, p.name, p.description, isPremiumLocked,
-        <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}><TokenSVG size={14} /></span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}><TokenSVG size={14} /></span>,
+        p.tags,
       ))}
     </div>
   )
@@ -173,7 +207,7 @@ export function HowToPlayModal({ onClose }: { onClose: () => void }) {
             </div>
           ))}
         </div>
-        <button onClick={onClose} style={{ marginTop: 20, width: '100%', padding: '13px', borderRadius: 12, background: 'linear-gradient(135deg,#F0A500,#C07A00)', color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, letterSpacing: '0.08em', border: 'none', boxShadow: '0 4px 18px rgba(240,165,0,0.3)', cursor: 'pointer' }}>LET'S PLAY!</button>
+        <button onClick={onClose} style={{ marginTop: 20, width: '100%', padding: '13px', borderRadius: 12, background: 'linear-gradient(135deg,#F0A500,#C07A00)', color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, letterSpacing: '0.08em', border: 'none', boxShadow: '0 4px 18px rgba(240,165,0,0.3)', cursor: 'pointer' }}>LET&rsquo;S PLAY!</button>
       </div>
     </div>
   )
@@ -268,7 +302,7 @@ export default function SetupHeader({
   authLoading = false,
   currentUser, onSignIn, onSignOut, onTokensUpdated,
   onOpenPurchaseModal, onOpenCustomSurveys, onOpenFeedback,
-  onSimulateReferral, onOpenReferral, onOpenGameHistory,
+  onOpenReferral, onOpenGameHistory,
 }: SetupHeaderProps) {
   const [open, setOpen] = useState(false)
   const [showAuth, setShowAuth] = useState(false)
@@ -280,6 +314,7 @@ export default function SetupHeader({
   useEffect(() => {
     const newBal = currentUser?.tokenBalance
     if (newBal !== undefined && newBal !== prevBalance.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- remount key + tokenPop when balance changes
       setPillAnimKey(k => k + 1)
       prevBalance.current = newBal
     }
@@ -298,7 +333,10 @@ export default function SetupHeader({
   const headerPending = authLoading && !currentUser
 
   useEffect(() => {
-    if (headerPending) setOpen(false)
+    if (headerPending) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- close menu while auth is mid-flight
+      setOpen(false)
+    }
   }, [headerPending])
 
   return (

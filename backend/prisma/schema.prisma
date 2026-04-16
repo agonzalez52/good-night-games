@@ -107,13 +107,26 @@ model game_sessions {
 }
 
 model su_survey_packs {
-  id          String   @id @default(uuid())
+  id          String                 @id @default(uuid())
   name        String
   description String
-  is_free     Boolean  @default(false)
-  is_active   Boolean  @default(true)
-  created_at  DateTime @default(now())
+  is_free     Boolean                @default(false)
+  is_active   Boolean                @default(true)
+  created_at  DateTime               @default(now())
   questions   su_survey_questions[]
+  tags        su_survey_pack_tags[]
+}
+
+model su_survey_pack_tags {
+  id         String          @id @default(uuid())
+  pack_id    String
+  label      String
+  color      String?
+  expires_at DateTime?
+  created_at DateTime        @default(now())
+  pack       su_survey_packs @relation(fields: [pack_id], references: [id], onDelete: Cascade)
+
+  @@index([pack_id])
 }
 
 model su_survey_questions {
