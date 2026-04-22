@@ -54,6 +54,13 @@ enum ReferralStatus {
   CLAIMED
 }
 
+enum FeedbackStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+  DONE
+}
+
 model purchases {
   id                         String         @id @default(uuid())
   user_id                    String
@@ -94,12 +101,14 @@ model judge_cache {
 }
 
 model feedback {
-  id         String   @id @default(uuid())
+  id         String         @id @default(uuid())
   user_id    String?
   game_id    String?
   category   String
   message    String
-  created_at DateTime @default(now())
+  status     FeedbackStatus @default(OPEN)
+  notes      String         @default("")
+  created_at DateTime       @default(now())
 }
 
 model game_sessions {

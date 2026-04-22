@@ -6,7 +6,7 @@ export const MAX_CUSTOM_SURVEYS = 40;
 /** Must match backend `judgeSchema` (`input` max length). */
 export const SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH = 200;
 /** Must match backend `feedbackSchema` (`message` max length). */
-export const FEEDBACK_MESSAGE_MAX_LENGTH = 2000;
+export const FEEDBACK_MESSAGE_MAX_LENGTH = 1000;
 
 // ─── SURVEY PACKS ─────────────────────────────────────────────────────────────
 // Catalog + questions come from GET /api/survey-showdown/packs and mergeSurveyPacksForGame

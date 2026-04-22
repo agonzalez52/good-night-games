@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { postFeedback, type FeedbackCategory } from '@/lib/api/feedback'
 import { getReferralData, type ReferralDataResponse } from '@/lib/api/referrals'
 import { useAuth } from '@/hooks/useAuth'
 import TokenSVG from '@/components/shared/TokenSVG'
 import { FEEDBACK_MESSAGE_MAX_LENGTH, type CurrentUser, type GameHistoryRecord } from '@/lib/constants'
 
 // ─── FEEDBACK MODAL ───────────────────────────────────────────────────────────
-// Mock submit until POST /api/feedback (category, message, optional user id) is wired.
+// POST /api/feedback (Bearer + category, message, game_id).
 
 interface FeedbackModalProps {
   onClose: () => void
@@ -16,21 +17,65 @@ interface FeedbackModalProps {
 }
 
 export function FeedbackModal({ onClose, currentUser }: FeedbackModalProps) {
-  const [category, setCategory] = useState('General')
+  const [category, setCategory] = useState<FeedbackCategory>('General')
   const [message, setMessage] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
-  const cats = ['Bug Report', 'Feature Request', 'General']
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const cats: FeedbackCategory[] = ['Bug Report', 'Feature Request', 'General']
 
-  function handleSubmit() {
-    if (!message.trim()) return
+  const len = message.length
+  const isOverLimit = len > FEEDBACK_MESSAGE_MAX_LENGTH
+  const canSend = Boolean(
+    currentUser && message.trim() && !isOverLimit
+  )
+
+  async function handleSubmit() {
+    const trimmed = message.trim()
+    if (!currentUser || !trimmed || isOverLimit) return
     setLoading(true)
-    setTimeout(() => { setLoading(false); setSubmitted(true) }, 700)
+    setSubmitError(null)
+    try {
+      const {
+        data: { session },
+      } = await createClient().auth.getSession()
+      if (!session?.access_token) {
+        setSubmitError("Can't verify your session. Please sign in again.")
+        return
+      }
+      await postFeedback(
+        { category, message: trimmed },
+        session.access_token
+      )
+      setSubmitted(true)
+    } catch (e) {
+      setSubmitError(
+        e instanceof Error ? e.message : 'Failed to send feedback. Try again.'
+      )
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(8px)', padding: '16px' }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={{ background: 'rgba(8,12,28,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '28px', width: 'min(420px,96vw)', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', animation: 'slideUp 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(8px)', padding: '16px', boxSizing: 'border-box' }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div
+        style={{
+          background: 'rgba(8,12,28,0.98)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 20,
+          padding: '28px',
+          width: 'min(420px,96vw)',
+          maxHeight: 'min(calc(100dvh - 32px), calc(100vh - 32px))',
+          boxSizing: 'border-box',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          overscrollBehavior: 'contain',
+          WebkitOverflowScrolling: 'touch',
+          boxShadow: '0 24px 80px rgba(0,0,0,0.7)',
+          animation: 'slideUp 0.28s cubic-bezier(0.34,1.56,0.64,1)',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: 'var(--text)' }}>Send Feedback 💬</div>
           <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 8, fontSize: 16, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
@@ -39,11 +84,27 @@ export function FeedbackModal({ onClose, currentUser }: FeedbackModalProps) {
           <div style={{ textAlign: 'center', padding: '28px 0' }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>🙏</div>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, color: '#0FD98A', marginBottom: 6 }}>Thanks for your feedback!</div>
-            <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-muted)', marginBottom: 22 }}>We read every submission.</div>
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.55 }}>We read every submission.</div>
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', marginBottom: 22, lineHeight: 1.5, maxWidth: 320, marginLeft: 'auto', marginRight: 'auto' }}>
+              Responses will only come from{' '}
+              <a
+                href="mailto:support@goodnightgames.app"
+                onClick={e => e.stopPropagation()}
+                style={{ color: 'var(--text-muted)', textDecoration: 'underline', textUnderlineOffset: 2 }}
+              >
+                support@goodnightgames.app
+              </a>
+              .
+            </div>
             <button onClick={onClose} style={{ padding: '11px 28px', borderRadius: 12, background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '0.06em', border: '1px solid rgba(255,255,255,0.09)' }}>CLOSE</button>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {!currentUser && (
+              <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                Sign in to send feedback.
+              </div>
+            )}
             <div>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 10, letterSpacing: '0.16em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>Category</div>
               <div style={{ display: 'flex', gap: 6 }}>
@@ -51,12 +112,62 @@ export function FeedbackModal({ onClose, currentUser }: FeedbackModalProps) {
                   <button key={c} onClick={() => setCategory(c)} style={{ flex: 1, padding: '8px 4px', borderRadius: 9, fontSize: 11, fontFamily: 'var(--font-body)', fontWeight: 600, background: category === c ? 'rgba(77,126,255,0.15)' : 'rgba(255,255,255,0.04)', color: category === c ? '#4D7EFF' : 'var(--text-muted)', border: `1px solid ${category === c ? 'rgba(77,126,255,0.4)' : 'rgba(255,255,255,0.08)'}`, cursor: 'pointer' }}>{c}</button>
                 ))}
               </div>
+              {category === 'Bug Report' && (
+                <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: 8 }}>
+                  Please include your steps and any error messages you encountered.
+                </div>
+              )}
             </div>
             <div>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 10, letterSpacing: '0.16em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>Message</div>
-              <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="Tell us what's on your mind…" rows={5} maxLength={FEEDBACK_MESSAGE_MAX_LENGTH} style={{ width: '100%', padding: '11px 14px', borderRadius: 10, fontSize: 13, fontFamily: 'var(--font-body)', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text)', resize: 'vertical', outline: 'none', lineHeight: 1.55 }} />
+              <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="Tell us what's on your mind…" rows={5} style={{ width: '100%', padding: '11px 14px', borderRadius: 10, fontSize: 13, fontFamily: 'var(--font-body)', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text)', resize: 'vertical', outline: 'none', lineHeight: 1.55 }} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontFamily: 'var(--font-body)',
+                    color: isOverLimit ? '#FF4D6A' : 'var(--text-muted)',
+                  }}
+                >
+                  {len}/{FEEDBACK_MESSAGE_MAX_LENGTH}
+                </span>
+              </div>
             </div>
-            <button onClick={handleSubmit} disabled={!message.trim() || loading} style={{ width: '100%', padding: '13px', borderRadius: 12, background: message.trim() ? 'linear-gradient(135deg,#4D7EFF,#2952CC)' : 'rgba(255,255,255,0.04)', color: message.trim() ? '#fff' : 'var(--text-faint)', fontFamily: 'var(--font-display)', fontSize: 14, letterSpacing: '0.08em', border: 'none', boxShadow: message.trim() ? '0 4px 18px rgba(77,126,255,0.3)' : 'none', transition: 'all 0.2s' }}>
+            {submitError && (
+              <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: '#FF4D6A', lineHeight: 1.5 }}>
+                {submitError}
+              </div>
+            )}
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 11, color: 'var(--text-faint)', lineHeight: 1.5 }}>
+              Responses will only come from{' '}
+              <a
+                href="mailto:support@goodnightgames.app"
+                onClick={e => e.stopPropagation()}
+                style={{ color: 'var(--text-muted)', textDecoration: 'underline', textUnderlineOffset: 2 }}
+              >
+                support@goodnightgames.app
+              </a>
+              .
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleSubmit()}
+              disabled={!canSend || loading}
+              style={{
+                width: '100%',
+                padding: '13px',
+                borderRadius: 12,
+                background: canSend && !loading ? 'linear-gradient(135deg,#4D7EFF,#2952CC)' : 'rgba(255,255,255,0.04)',
+                color: canSend && !loading ? '#fff' : 'var(--text-faint)',
+                fontFamily: 'var(--font-display)',
+                fontSize: 14,
+                letterSpacing: '0.08em',
+                border: 'none',
+                boxShadow: canSend && !loading ? '0 4px 18px rgba(77,126,255,0.3)' : 'none',
+                transition: 'all 0.2s',
+                cursor: !canSend || loading ? 'not-allowed' : 'pointer',
+              }}
+            >
               {loading ? 'SENDING…' : 'SEND FEEDBACK'}
             </button>
           </div>

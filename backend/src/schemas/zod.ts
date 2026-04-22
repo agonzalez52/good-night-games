@@ -39,7 +39,7 @@ export const judgeSchema = z.object({
 
 export const feedbackSchema = z.object({
   category: z.enum(['Bug Report', 'Feature Request', 'General']),
-  message: z.string().min(1).max(2000),
+  message: z.string().min(1).max(1000),
   game_id: z.string().optional(),
 })
 
