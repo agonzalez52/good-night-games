@@ -44,7 +44,6 @@ interface SetupScreenProps {
   onSaveCollection: (collection: CustomCollection) => void
   onDeleteCollection: (id: string) => void
   onCloseSurveys: () => void
-  onSimulateReferral: () => void
   gameHistory: GameHistoryRecord[]
 }
 
@@ -54,7 +53,7 @@ export default function SetupScreen({
   onOpenPurchaseModal, selectedPackId, onSelectPack,
   customSurveys, customCollections, onSaveSurvey, onDeleteSurvey,
   onSaveCollection, onDeleteCollection, onCloseSurveys,
-  onSimulateReferral, gameHistory,
+  gameHistory,
 }: SetupScreenProps) {
   const [team1, setTeam1] = useState('TEAM 1')
   const [team2, setTeam2] = useState('TEAM 2')
@@ -126,7 +125,6 @@ export default function SetupScreen({
           onTokensUpdated={onTokensUpdated} onOpenPurchaseModal={onOpenPurchaseModal}
           onOpenCustomSurveys={() => setShowCustomSurveys(true)}
           onOpenFeedback={() => setShowFeedback(true)}
-          onSimulateReferral={onSimulateReferral}
           onOpenReferral={() => setShowReferral(true)}
           onOpenGameHistory={() => setShowHistory(true)}
         />
@@ -281,7 +279,7 @@ export default function SetupScreen({
       )}
 
       {showHistory && <GameHistoryModal onClose={() => setShowHistory(false)} gameHistory={gameHistory} />}
-      {showReferral && currentUser && <ReferralModal onClose={() => setShowReferral(false)} currentUser={currentUser} onSimulateReferral={onSimulateReferral} />}
+      {showReferral && currentUser && <ReferralModal onClose={() => setShowReferral(false)} currentUser={currentUser} />}
       {showAuthFromPicker && <AuthModal initialMode="signup" onClose={() => setShowAuthFromPicker(false)} onAuth={user => { onSignIn(user); setShowAuthFromPicker(false) }} onTokenCredit={n => { onTokensUpdated((currentUser?.tokenBalance || 0) + n); setShowAuthFromPicker(false) }} />}
       {showCustomSurveys && currentUser && <CustomSurveysModal surveys={customSurveys} collections={customCollections} onSaveSurvey={onSaveSurvey} onDeleteSurvey={onDeleteSurvey} onSaveCollection={onSaveCollection} onDeleteCollection={onDeleteCollection} onClose={() => { setShowCustomSurveys(false); onCloseSurveys() }} />}
       {showHowToPlay && <HowToPlayModal onClose={() => setShowHowToPlay(false)} />}

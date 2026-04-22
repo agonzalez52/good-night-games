@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import TokenSVG from '@/components/shared/TokenSVG'
 import type { CurrentUser } from '@/lib/constants'
@@ -30,6 +31,7 @@ interface AuthModalProps {
 }
 
 export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onTokenCredit }: AuthModalProps) {
+  const searchParams = useSearchParams()
   const [mode, setMode] = useState<AuthModalMode>(initialMode)
   const [signinMethod, setSigninMethod] = useState<'password' | 'magic'>('password')
   const [email, setEmail] = useState('')
@@ -112,11 +114,16 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
     setLoading(true)
     const supabase = createClient()
+    const refParam = searchParams.get('ref')?.trim()
+    const referralCodeFromUrl = refParam ? refParam.toUpperCase() : ''
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { username: username || email.split('@')[0] },
+        data: {
+          username: username || email.split('@')[0],
+          ...(referralCodeFromUrl ? { referral_code: referralCodeFromUrl } : {}),
+        },
         emailRedirectTo: `${window.location.origin}/auth/callback?next=/survey-showdown`,
       },
     })
@@ -192,9 +199,15 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
 
   async function handleGoogleAuth() {
     const supabase = createClient()
+    const refParam = searchParams.get('ref')?.trim()
+    const referralCodeFromUrl = refParam ? refParam.toUpperCase() : ''
+    const base = `${window.location.origin}/auth/callback`
+    const redirectTo = referralCodeFromUrl
+      ? `${base}?next=${encodeURIComponent('/survey-showdown')}&ref=${encodeURIComponent(referralCodeFromUrl)}`
+      : base
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo },
     })
     // Page redirects — no further action needed
   }

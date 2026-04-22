@@ -49,6 +49,11 @@ enum PurchaseStatus {
   REFUNDED
 }
 
+enum ReferralStatus {
+  PENDING
+  CLAIMED
+}
+
 model purchases {
   id                         String         @id @default(uuid())
   user_id                    String
@@ -64,11 +69,11 @@ model purchases {
 }
 
 model referrals {
-  id          String    @id @default(uuid())
+  id          String          @id @default(uuid())
   referrer_id String
-  referred_id String    @unique
-  status      String    @default("pending")
-  created_at  DateTime  @default(now())
+  referred_id String          @unique
+  status      ReferralStatus  @default(PENDING)
+  created_at  DateTime        @default(now())
   claimed_at  DateTime?
   expires_at  DateTime
 }

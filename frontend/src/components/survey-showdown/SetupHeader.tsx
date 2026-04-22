@@ -293,7 +293,6 @@ interface SetupHeaderProps {
   onOpenPurchaseModal: () => void
   onOpenCustomSurveys: () => void
   onOpenFeedback: () => void
-  onSimulateReferral: () => void
   onOpenReferral: () => void
   onOpenGameHistory: () => void
 }

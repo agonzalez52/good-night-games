@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { Prisma } from '@prisma/client'
+import { Prisma, ReferralStatus } from '@prisma/client'
 import { requireAuth, AuthVariables } from '../middleware/auth'
 import { prisma } from '../lib/prisma'
 import { supabaseAdmin } from '../lib/supabase'
@@ -123,7 +123,7 @@ auth.get('/me', requireAuth, async (c) => {
   
   // Count claimed referrals for this user
   const referralsClaimed = await prisma.referrals.count({
-    where: { referrer_id: userId, status: 'claimed' }
+    where: { referrer_id: userId, status: ReferralStatus.CLAIMED },
   })
   
   return c.json({

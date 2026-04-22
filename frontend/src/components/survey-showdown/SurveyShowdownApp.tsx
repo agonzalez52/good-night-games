@@ -44,7 +44,6 @@ export default function SurveyShowdownApp() {
     markEmailVerified,
     signOut,
     setAuthUser,
-    patchUser,
   } = useAuth()
 
   const router = useRouter()
@@ -157,16 +156,7 @@ export default function SurveyShowdownApp() {
     markEmailVerified()
   }
 
-  // Phase 9: replace with real referral data from GET /api/referrals
-  function handleSimulateReferral() {
-    patchUser(u => {
-      const current = u.referralsClaimed || 0
-      if (current >= 3) return u
-      return { ...u, referralsClaimed: current + 1, tokenBalance: (u.tokenBalance || 0) + 2 }
-    })
-  }
-
-  // Custom survey handlers — Phase 9: each maps to an API call
+  // Custom survey handlers (local state until survey-showdown CRUD APIs are wired)
   function handleSaveSurvey(survey: CustomSurvey) {
     setCustomSurveys(prev => {
       const exists = prev.find(s => s.id === survey.id)
@@ -332,7 +322,7 @@ export default function SurveyShowdownApp() {
     return 'Custom'
   }
 
-  // Phase 9: also call POST /api/survey-showdown/history with game_id: "survey_showdown" here
+  // Completed games stay in local history only until POST /api/survey-showdown/history (game_id: "survey_showdown") is wired.
   function handleNewGame(finalTeams?: Team[]) {
     if (finalTeams) {
       const winner =
@@ -373,7 +363,6 @@ export default function SurveyShowdownApp() {
           onSaveSurvey={handleSaveSurvey} onDeleteSurvey={handleDeleteSurvey}
           onSaveCollection={handleSaveCollection} onDeleteCollection={handleDeleteCollection}
           onCloseSurveys={handleSurveysModalClose}
-          onSimulateReferral={handleSimulateReferral}
           gameHistory={gameHistory}
         />
       )}

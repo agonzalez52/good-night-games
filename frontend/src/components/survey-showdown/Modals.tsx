@@ -1,10 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { getReferralData, type ReferralDataResponse } from '@/lib/api/referrals'
+import { useAuth } from '@/hooks/useAuth'
+import TokenSVG from '@/components/shared/TokenSVG'
 import { FEEDBACK_MESSAGE_MAX_LENGTH, type CurrentUser, type GameHistoryRecord } from '@/lib/constants'
 
 // ─── FEEDBACK MODAL ───────────────────────────────────────────────────────────
-// Phase 9: replace setTimeout with fetch('POST /api/feedback', { category, message, userId? })
+// Mock submit until POST /api/feedback (category, message, optional user id) is wired.
 
 interface FeedbackModalProps {
   onClose: () => void
@@ -21,7 +25,6 @@ export function FeedbackModal({ onClose, currentUser }: FeedbackModalProps) {
   function handleSubmit() {
     if (!message.trim()) return
     setLoading(true)
-    // Phase 9: replace with fetch('POST /api/feedback', { category, message, userId: currentUser?.id })
     setTimeout(() => { setLoading(false); setSubmitted(true) }, 700)
   }
 
@@ -64,25 +67,79 @@ export function FeedbackModal({ onClose, currentUser }: FeedbackModalProps) {
 }
 
 // ─── REFERRAL MODAL ───────────────────────────────────────────────────────────
-// Phase 9: replace mock referralCode with currentUser.referralCode from GET /api/referrals
-// Remove onSimulateReferral prop and handler in Phase 9 (simulate button already mock-gated)
-
-const isMockMode = process.env.NEXT_PUBLIC_MOCK_MODE === 'true'
+// Loads share code and counts from GET /api/referrals; claim awards both parties via POST /claim after verify.
 
 interface ReferralModalProps {
   onClose: () => void
   currentUser: CurrentUser
-  onSimulateReferral?: () => void
 }
 
-export function ReferralModal({ onClose, currentUser, onSimulateReferral }: ReferralModalProps) {
+export function ReferralModal({ onClose, currentUser }: ReferralModalProps) {
+  const { referralSnapshot, revalidateReferralSnapshot } = useAuth()
   const [copied, setCopied] = useState(false)
-  const claimed = currentUser?.referralsClaimed || 0
-  // Phase 9: replace with currentUser.referralCode from DB (GET /api/referrals)
-  const referralCode = (currentUser?.id || 'USER').slice(-6).toUpperCase()
-  const referralLink = `https://surveyshowdown.com/join?ref=${referralCode}`
+  const [fallbackReferral, setFallbackReferral] = useState<ReferralDataResponse | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const referralWarmKey =
+    referralSnapshot != null
+      ? `${referralSnapshot.referralCode}:${referralSnapshot.claimed}:${referralSnapshot.pending}:${referralSnapshot.max}`
+      : ''
+  const [blockingFetch, setBlockingFetch] = useState(() => referralWarmKey === '')
+  const lastReferralUserId = useRef(currentUser.id)
+
+  const referral = referralSnapshot ?? fallbackReferral
+  const loading = !referral && !loadError && blockingFetch
+
+  useEffect(() => {
+    if (lastReferralUserId.current !== currentUser.id) {
+      lastReferralUserId.current = currentUser.id
+      setFallbackReferral(null)
+      setLoadError(null)
+    }
+  }, [currentUser.id])
+
+  useEffect(() => {
+    void revalidateReferralSnapshot()
+
+    if (referralWarmKey !== '') {
+      setBlockingFetch(false)
+      return
+    }
+
+    let cancelled = false
+    setBlockingFetch(true)
+    setLoadError(null)
+    void (async () => {
+      try {
+        const {
+          data: { session },
+        } = await createClient().auth.getSession()
+        const token = session?.access_token
+        if (!token) throw new Error('No session')
+        const data = await getReferralData(token)
+        if (!cancelled) setFallbackReferral(data)
+      } catch {
+        if (!cancelled) {
+          setLoadError('Could not load your referral link. Try again in a moment.')
+        }
+      } finally {
+        if (!cancelled) setBlockingFetch(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [referralWarmKey, currentUser.id, revalidateReferralSnapshot])
+
+  const claimed = referral?.claimed ?? currentUser.referralsClaimed ?? 0
+  const maxReferrals = referral?.max ?? 3
+  const referralCode = referral?.referralCode ?? ''
+  const referralLink =
+    typeof window !== 'undefined' && referralCode
+      ? `${window.location.origin}/survey-showdown?ref=${encodeURIComponent(referralCode)}`
+      : ''
 
   function handleCopy() {
+    if (!referralLink) return
     navigator.clipboard?.writeText(referralLink).catch(() => { })
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -104,44 +161,61 @@ export function ReferralModal({ onClose, currentUser, onSimulateReferral }: Refe
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[
               { n: '1', text: <span>Invite up to 3 friends <strong style={{ color: 'var(--text)', fontWeight: 600 }}>using your unique link</strong> — direct signups won't count</span> },
-              { n: '2', text: <span>Each friend must <strong style={{ color: 'var(--text)', fontWeight: 600 }}>claim their 4 free signup tokens</strong></span> },
+              { n: '2', text: <span>Each friend must <strong style={{ color: 'var(--text)', fontWeight: 600 }}>claim their 4 free signup tokens</strong> (verify email)</span> },
             ].map(({ n, text }) => (
               <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                 <div style={{ width: 20, height: 20, borderRadius: 6, background: 'rgba(15,217,138,0.12)', border: '1px solid rgba(15,217,138,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-display)', fontSize: 11, color: '#0FD98A', flexShrink: 0, marginTop: 1 }}>{n}</div>
                 <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55, paddingTop: 2 }}>{text}</div>
               </div>
             ))}
-            <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55, marginTop: 2 }}>
-              You'll automatically receive <strong style={{ color: '#0FD98A', fontWeight: 600 }}>2 tokens</strong> per successful referral
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              When that happens, <strong style={{ color: '#0FD98A', fontWeight: 600 }}>you and your friend</strong> each get{' '}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <strong style={{ color: '#0FD98A', fontWeight: 600 }}>2</strong> <TokenSVG size={14} />
+              </span>
             </div>
           </div>
         </div>
+
+        {!loading && referral && (
+          <div style={{ fontFamily: 'var(--font-body)', fontSize: 11, color: 'var(--text-faint)', marginBottom: 12, letterSpacing: '0.02em' }}>
+            Completed referrals: <span style={{ color: 'var(--text-muted)' }}>{claimed}</span> / {maxReferrals}
+            {referral.pending > 0 && (
+              <span style={{ marginLeft: 8 }}>({referral.pending} pending)</span>
+            )}
+          </div>
+        )}
 
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 10, letterSpacing: '0.16em', color: 'var(--text-faint)', textTransform: 'uppercase', marginBottom: 8 }}>Your Referral Link</div>
+          {loadError && (
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: '#FF4D6A', marginBottom: 10, lineHeight: 1.5 }}>{loadError}</div>
+          )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-            <div style={{ flex: 1, padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
-              {referralLink}
-            </div>
-            <button onClick={handleCopy} style={{ padding: '10px 16px', borderRadius: 10, background: copied ? 'rgba(15,217,138,0.15)' : 'linear-gradient(135deg,#0FD98A,#0AAD6E)', color: copied ? '#0FD98A' : '#fff', fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.08em', border: copied ? '1px solid rgba(15,217,138,0.4)' : 'none', boxShadow: copied ? 'none' : '0 3px 12px rgba(15,217,138,0.3)', whiteSpace: 'nowrap', transition: 'all 0.2s', flexShrink: 0 }}>
-              {copied ? '✓ COPIED' : 'COPY LINK'}
-            </button>
+            {loading ? (
+              <>
+                <div style={{ flex: 1, height: 42, borderRadius: 10, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} aria-hidden />
+                <div style={{ width: 108, height: 42, borderRadius: 10, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite', flexShrink: 0 }} aria-hidden />
+              </>
+            ) : (
+              <>
+                <div style={{ flex: 1, padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
+                  {referralLink || '—'}
+                </div>
+                <button type="button" onClick={handleCopy} disabled={!referralLink} style={{ padding: '10px 16px', borderRadius: 10, background: !referralLink ? 'rgba(255,255,255,0.04)' : copied ? 'rgba(15,217,138,0.15)' : 'linear-gradient(135deg,#0FD98A,#0AAD6E)', color: !referralLink ? 'var(--text-faint)' : copied ? '#0FD98A' : '#fff', fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '0.08em', border: copied ? '1px solid rgba(15,217,138,0.4)' : 'none', boxShadow: copied || !referralLink ? 'none' : '0 3px 12px rgba(15,217,138,0.3)', whiteSpace: 'nowrap', transition: 'all 0.2s', flexShrink: 0, opacity: !referralLink ? 0.38 : 1, cursor: !referralLink ? 'not-allowed' : 'pointer' }}>
+                  {copied ? '✓ COPIED' : 'COPY LINK'}
+                </button>
+              </>
+            )}
           </div>
         </div>
-
-        {/* MOCK MODE ONLY — gated behind NEXT_PUBLIC_MOCK_MODE; remove prop in Phase 9 */}
-        {isMockMode && claimed < 3 && (
-          <button onClick={() => onSimulateReferral && onSimulateReferral()} style={{ width: '100%', padding: '11px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', color: 'var(--text-faint)', fontFamily: 'var(--font-body)', fontSize: 12, border: '1px dashed rgba(255,255,255,0.1)', cursor: 'pointer', letterSpacing: '0.04em' }}>
-            🧪 Simulate a friend claiming their tokens
-          </button>
-        )}
       </div>
     </div>
   )
 }
 
 // ─── GAME HISTORY MODAL ───────────────────────────────────────────────────────
-// Phase 9: replace gameHistory prop with GET /api/survey-showdown/history?game=survey_showdown
+// Rows come from parent local state; optional: load via GET /api/survey-showdown/history?game=survey_showdown
 // Record shape: { id, timestamp, team1, team2, rounds, pack, winner, score1, score2 }
 
 function formatHistoryTime(date: Date): string {

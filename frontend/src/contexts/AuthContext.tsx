@@ -13,6 +13,11 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import type { CurrentUser } from '@/lib/constants'
+import {
+  claimReferral,
+  getReferralData,
+  type ReferralDataResponse,
+} from '@/lib/api/referrals'
 import { getTokenBundles } from '@/lib/api/tokens'
 import { useTokenBalance } from '@/hooks/useTokenBalance'
 
@@ -42,6 +47,9 @@ async function consumeImplicitGrantHash(supabase: SupabaseClient): Promise<void>
 export type AuthContextValue = {
   currentUser: CurrentUser | null
   loading: boolean
+  /** GET /api/referrals snapshot for `currentUser.id`; null if missing or user switched. */
+  referralSnapshot: ReferralDataResponse | null
+  revalidateReferralSnapshot: () => Promise<void>
   updateTokenBalance: (newBalance: number) => void
   markEmailVerified: () => void
   signOut: () => Promise<void>
@@ -51,40 +59,101 @@ export type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
+function parseReferralPayload(raw: unknown): ReferralDataResponse | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  if (
+    typeof o.referralCode !== 'string' ||
+    typeof o.claimed !== 'number' ||
+    typeof o.pending !== 'number' ||
+    typeof o.max !== 'number'
+  ) {
+    return null
+  }
+  return {
+    referralCode: o.referralCode,
+    claimed: o.claimed,
+    pending: o.pending,
+    max: o.max,
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
-  /** Collapses concurrent POST /verify-email (INITIAL_SESSION + Strict Mode, etc.). */
-  const verifyEmailInFlight = useRef<Promise<void> | null>(null)
+  const [referralCache, setReferralCache] = useState<{
+    userId: string
+    data: ReferralDataResponse
+  } | null>(null)
+  /** Collapses concurrent POST /verify-email (INITIAL_SESSION + Strict Mode, etc.). Resolves to response ok. */
+  const verifyEmailInFlight = useRef<Promise<boolean> | null>(null)
 
   /**
    * Uses the session passed in — never call supabase.auth.getSession() from inside
    * onAuthStateChange (async callbacks run under GoTrue's lock; getSession there can deadlock).
    */
-  const fetchUserProfile = useCallback(async (session: Session): Promise<CurrentUser | null> => {
-    const authUser = session.user
-    if (!authUser || !session.access_token) return null
+  const fetchUserProfile = useCallback(
+    async (
+      session: Session,
+    ): Promise<{ user: CurrentUser | null; referral: ReferralDataResponse | null }> => {
+      const authUser = session.user
+      if (!authUser || !session.access_token) return { user: null, referral: null }
 
-    const headers = { Authorization: `Bearer ${session.access_token}` }
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
+      const headers = { Authorization: `Bearer ${session.access_token}` }
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
 
-    const [profileRes, tokenRes] = await Promise.all([
-      fetch(`${backendUrl}/api/auth/me`, { headers }),
-      fetch(`${backendUrl}/api/tokens/balance`, { headers }),
-    ])
+      const [profileRes, tokenRes, referralRes] = await Promise.all([
+        fetch(`${backendUrl}/api/auth/me`, { headers }),
+        fetch(`${backendUrl}/api/tokens/balance`, { headers }),
+        fetch(`${backendUrl}/api/referrals`, { headers }),
+      ])
 
-    if (!profileRes.ok || !tokenRes.ok) return null
+      if (!profileRes.ok || !tokenRes.ok) return { user: null, referral: null }
 
-    const profile = await profileRes.json()
-    const tokens = await tokenRes.json()
+      const profile = await profileRes.json()
+      const tokens = await tokenRes.json()
 
-    return {
-      id: authUser.id,
-      email: authUser.email ?? '',
-      username: profile.username ?? authUser.email?.split('@')[0] ?? 'player',
-      tokenBalance: tokens.balance ?? 0,
-      emailVerified: profile.email_verified ?? false,
-      referralsClaimed: profile.referrals_claimed ?? 0,
+      let referral: ReferralDataResponse | null = null
+      if (referralRes.ok) {
+        try {
+          referral = parseReferralPayload(await referralRes.json())
+        } catch {
+          referral = null
+        }
+      }
+
+      return {
+        user: {
+          id: authUser.id,
+          email: authUser.email ?? '',
+          username: profile.username ?? authUser.email?.split('@')[0] ?? 'player',
+          tokenBalance: tokens.balance ?? 0,
+          emailVerified: profile.email_verified ?? false,
+          referralsClaimed: profile.referrals_claimed ?? 0,
+        },
+        referral,
+      }
+    },
+    [],
+  )
+
+  const updateTokenBalance = useCallback((newBalance: number) => {
+    setCurrentUser(u => (u ? { ...u, tokenBalance: newBalance } : u))
+  }, [])
+
+  const revalidateReferralSnapshot = useCallback(async () => {
+    const supabase = createClient()
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const token = session?.access_token
+    const uid = session?.user?.id
+    if (!token || !uid) return
+    try {
+      const data = await getReferralData(token)
+      setReferralCache({ userId: uid, data })
+    } catch {
+      // leave existing cache; modal may show stale-while-revalidate
     }
   }, [])
 
@@ -108,6 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (event === 'SIGNED_OUT') {
             verifyEmailInFlight.current = null
             setCurrentUser(null)
+            setReferralCache(null)
             setLoading(false)
             return
           }
@@ -127,6 +197,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (event === 'SIGNED_IN') {
                 setLoading(true)
               }
+              const sessionUserId = session?.user?.id
+              if (sessionUserId) {
+                setReferralCache(prev => (prev && prev.userId !== sessionUserId ? null : prev))
+              }
               const runVerifyEmail =
                 session.user.email_confirmed_at &&
                 session.access_token &&
@@ -136,19 +210,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (runVerifyEmail) {
                 verifyEmailInFlight.current ??= (async () => {
                   try {
-                    await fetch(`${backendUrl}/api/auth/verify-email`, {
+                    const res = await fetch(`${backendUrl}/api/auth/verify-email`, {
                       method: 'POST',
                       headers: { Authorization: `Bearer ${session.access_token}` },
                     })
+                    return res.ok
                   } finally {
                     verifyEmailInFlight.current = null
                   }
                 })()
-                await verifyEmailInFlight.current
+                const verifyOk = await verifyEmailInFlight.current
+                if (verifyOk && session.access_token) {
+                  try {
+                    const claimResult = await claimReferral(session.access_token)
+                    if (claimResult.success) updateTokenBalance(claimResult.balance)
+                  } catch {
+                    // Referral claim must not block profile sync (network / 5xx / malformed body only).
+                  }
+                }
               }
-              const profile = await fetchUserProfile(session)
+              const { user: profile, referral: referralPayload } = await fetchUserProfile(session)
               if (!cancelled) {
                 setCurrentUser(profile)
+                if (profile && referralPayload) {
+                  setReferralCache({ userId: profile.id, data: referralPayload })
+                } else if (profile) {
+                  setReferralCache(null)
+                } else {
+                  setReferralCache(null)
+                }
                 if (profile) void getTokenBundles().catch(() => {})
               }
             } finally {
@@ -170,11 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true
       subscription?.unsubscribe()
     }
-  }, [fetchUserProfile])
-
-  const updateTokenBalance = useCallback((newBalance: number) => {
-    setCurrentUser(u => (u ? { ...u, tokenBalance: newBalance } : u))
-  }, [])
+  }, [fetchUserProfile, revalidateReferralSnapshot, updateTokenBalance])
 
   useTokenBalance(currentUser?.id, updateTokenBalance)
 
@@ -186,6 +272,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const supabase = createClient()
     await supabase.auth.signOut()
     setCurrentUser(null)
+    setReferralCache(null)
   }, [])
 
   /** Signup (pre-verify) or mock auth — session listener may overwrite with server profile after sync. */
@@ -197,10 +284,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentUser(u => (u ? updater(u) : u))
   }, [])
 
+  const referralSnapshot = useMemo((): ReferralDataResponse | null => {
+    if (!referralCache || !currentUser || referralCache.userId !== currentUser.id) return null
+    return referralCache.data
+  }, [referralCache, currentUser?.id])
+
   const value = useMemo<AuthContextValue>(
     () => ({
       currentUser,
       loading,
+      referralSnapshot,
+      revalidateReferralSnapshot,
       updateTokenBalance,
       markEmailVerified,
       signOut,
@@ -210,12 +304,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       currentUser,
       loading,
+      referralSnapshot,
+      revalidateReferralSnapshot,
       updateTokenBalance,
       markEmailVerified,
       signOut,
       setAuthUser,
       patchUser,
-    ]
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/survey-showdown'
+  const ref = searchParams.get('ref')
 
   if (code) {
     const cookieStore = await cookies()
@@ -32,6 +33,11 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (!error) {
+      const refParam = ref?.trim()
+      if (refParam) {
+        const normalized = refParam.toUpperCase()
+        await supabase.auth.updateUser({ data: { referral_code: normalized } })
+      }
       return NextResponse.redirect(`${origin}${next}`)
     }
   }
