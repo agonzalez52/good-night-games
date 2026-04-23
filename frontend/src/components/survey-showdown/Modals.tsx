@@ -375,18 +375,18 @@ interface GameHistoryModalProps {
 
 export function GameHistoryModal({ onClose, gameHistory }: GameHistoryModalProps) {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(8px)', padding: '16px' }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={{ background: 'rgba(8,12,28,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '24px', width: 'min(480px,96vw)', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', animation: 'slideUp 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(8px)', padding: '16px', boxSizing: 'border-box' }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background: 'rgba(8,12,28,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '24px', width: 'min(480px,96vw)', maxHeight: 'min(calc(100dvh - 32px), calc(100vh - 32px))', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box', boxShadow: '0 24px 80px rgba(0,0,0,0.7)', animation: 'slideUp 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20, flexShrink: 0 }}>
           <div>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: 'var(--text)' }}>🎮 Game History</div>
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', marginTop: 3 }}>
-              {gameHistory.length === 0 ? 'No games yet' : `Last ${gameHistory.length} of 50 game${gameHistory.length !== 1 ? 's' : ''}`}
+              {gameHistory.length === 0 ? 'No games yet' : `Last ${gameHistory.length} of 50 games`}
             </div>
           </div>
           <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 8, fontSize: 16, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 2 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', paddingRight: 2, overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
           {gameHistory.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-faint)', fontFamily: 'var(--font-body)', fontSize: 13, lineHeight: 1.6 }}>
               No games played yet.<br />Complete a game to see it here.
