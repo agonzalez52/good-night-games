@@ -41,6 +41,7 @@ interface SetupScreenProps {
   customCollections: CustomCollection[]
   onSaveSurvey: (survey: CustomSurvey) => void
   onDeleteSurvey: (id: string) => void
+  onMoveSurveyToCollection: (surveyId: string, targetCollectionId: string | null) => void
   onSaveCollection: (collection: CustomCollection) => void
   onDeleteCollection: (id: string) => void
   onCloseSurveys: () => void
@@ -51,7 +52,7 @@ export default function SetupScreen({
   onStart, packQuestions, setupRoundCountCap, packsLoading, packsError, catalogFree, catalogPremium,
   authLoading = false, currentUser, onSignIn, onSignOut, onTokensUpdated,
   onOpenPurchaseModal, selectedPackId, onSelectPack,
-  customSurveys, customCollections, onSaveSurvey, onDeleteSurvey,
+  customSurveys, customCollections, onSaveSurvey, onDeleteSurvey, onMoveSurveyToCollection,
   onSaveCollection, onDeleteCollection, onCloseSurveys,
   gameHistory,
 }: SetupScreenProps) {
@@ -281,7 +282,7 @@ export default function SetupScreen({
       {showHistory && <GameHistoryModal onClose={() => setShowHistory(false)} gameHistory={gameHistory} />}
       {showReferral && currentUser && <ReferralModal onClose={() => setShowReferral(false)} currentUser={currentUser} />}
       {showAuthFromPicker && <AuthModal initialMode="signup" onClose={() => setShowAuthFromPicker(false)} onAuth={user => { onSignIn(user); setShowAuthFromPicker(false) }} onTokenCredit={n => { onTokensUpdated((currentUser?.tokenBalance || 0) + n); setShowAuthFromPicker(false) }} />}
-      {showCustomSurveys && currentUser && <CustomSurveysModal surveys={customSurveys} collections={customCollections} onSaveSurvey={onSaveSurvey} onDeleteSurvey={onDeleteSurvey} onSaveCollection={onSaveCollection} onDeleteCollection={onDeleteCollection} onClose={() => { setShowCustomSurveys(false); onCloseSurveys() }} />}
+      {showCustomSurveys && currentUser && <CustomSurveysModal surveys={customSurveys} collections={customCollections} onSaveSurvey={onSaveSurvey} onDeleteSurvey={onDeleteSurvey} onMoveSurveyToCollection={onMoveSurveyToCollection} onSaveCollection={onSaveCollection} onDeleteCollection={onDeleteCollection} onClose={() => { setShowCustomSurveys(false); onCloseSurveys() }} />}
       {showHowToPlay && <HowToPlayModal onClose={() => setShowHowToPlay(false)} />}
       {showFeedback && <FeedbackModal onClose={() => setShowFeedback(false)} currentUser={currentUser} />}
     </div>

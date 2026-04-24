@@ -26,6 +26,7 @@ import {
   deleteCustomCollection,
   deleteCustomSurvey,
   getCustomSurveys,
+  patchCustomSurveyCollection,
   updateCustomCollection,
   updateCustomSurvey,
   type UpsertCustomSurveyInput,
@@ -98,6 +99,10 @@ export default function SurveyShowdownApp() {
   // Pack selection & custom surveys
   const [selectedPackId, setSelectedPackId] = useState('')
   const [customSurveys, setCustomSurveys] = useState<CustomSurvey[]>([])
+  const customSurveysRef = useRef<CustomSurvey[]>([])
+  useEffect(() => {
+    customSurveysRef.current = customSurveys
+  }, [customSurveys])
   const [customCollections, setCustomCollections] = useState<CustomCollection[]>([])
   const [isTokenGame, setIsTokenGame] = useState(false)
   const [gameHistory, setGameHistory] = useState<GameHistoryRecord[]>([])
@@ -257,6 +262,37 @@ export default function SurveyShowdownApp() {
       })
     } catch (error) {
       console.error('Failed to save custom survey', error)
+      setCustomSurveys(() => snapshot)
+    }
+  }
+
+  async function handleMoveSurveyToCollection(surveyId: string, targetCollectionId: string | null) {
+    // Sync read before / after async token: awaiting would otherwise let another update commit, so
+    // the setState(optimistic) "no-op" branch can wrongly skip with a side-effect (shouldPatch) on
+    // a stale `prev` every other time when moves interleave.
+    const s0 = customSurveysRef.current.find((x) => x.id === surveyId)
+    if (!s0) return
+    if ((s0.collectionId ?? null) === (targetCollectionId ?? null)) return
+    const snapshot = [...customSurveysRef.current]
+
+    const token = await getSessionAccessToken()
+    if (!token) {
+      console.error('Sign in required to move custom surveys.')
+      return
+    }
+    // After the async gap, re-check so we do not re-apply an already-committed move.
+    const s1 = customSurveysRef.current.find((x) => x.id === surveyId)
+    if (!s1) return
+    if ((s1.collectionId ?? null) === (targetCollectionId ?? null)) return
+
+    setCustomSurveys((prev) =>
+      prev.map((x) => (x.id === surveyId ? { ...x, collectionId: targetCollectionId } : x))
+    )
+    try {
+      const saved = await patchCustomSurveyCollection(token, surveyId, targetCollectionId)
+      setCustomSurveys((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))
+    } catch (error) {
+      console.error('Failed to move custom survey', error)
       setCustomSurveys(() => snapshot)
     }
   }
@@ -563,6 +599,7 @@ export default function SurveyShowdownApp() {
           selectedPackId={selectedPackId} onSelectPack={setSelectedPackId}
           customSurveys={customSurveys} customCollections={customCollections}
           onSaveSurvey={handleSaveSurvey} onDeleteSurvey={handleDeleteSurvey}
+          onMoveSurveyToCollection={handleMoveSurveyToCollection}
           onSaveCollection={handleSaveCollection} onDeleteCollection={handleDeleteCollection}
           onCloseSurveys={handleSurveysModalClose}
           gameHistory={gameHistory}

@@ -3,6 +3,11 @@ import { customSurveyAnswerId, postJudge } from "@/lib/api/survey-showdown/judge
 // ─── TOKENS ───────────────────────────────────────────────────────────────────
 export const TOKENS_PER_GAME = 2;
 export const MAX_CUSTOM_SURVEYS = 40;
+export const MAX_CUSTOM_COLLECTIONS = 20;
+export const CUSTOM_SURVEY_NAME_MAX_LENGTH = 100;
+export const CUSTOM_COLLECTION_NAME_MAX_LENGTH = 100;
+export const CUSTOM_SURVEY_QUESTION_MAX_LENGTH = 200;
+export const CUSTOM_SURVEY_ANSWER_MAX_LENGTH = 100;
 /** Must match backend `judgeSchema` (`input` max length). */
 export const SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH = 200;
 /** Must match backend `feedbackSchema` (`message` max length). */
@@ -25,7 +30,14 @@ export type Pack = { id: string; name: string; description: string; questions: S
 export interface SurveyPack extends Pack {
   is_free: boolean;
 }
-export type CustomSurvey = { id: string; name: string; collectionId: string | null; questions: { id: string; question: string; answers: Answer[] }[] };
+/** One face-off line per DB row; `id` is the board `SurveyQuestion.id` for that row. */
+export type CustomSurvey = {
+  id: string
+  name: string | null
+  collectionId: string | null
+  question: string
+  answers: Answer[]
+}
 export type CustomCollection = { id: string; name: string };
 export type CurrentUser = {
   id: string;
@@ -54,16 +66,17 @@ function newSurveyQuestionClientId(): string {
   return `q-${Math.random().toString(36).slice(2, 12)}`
 }
 
-export function customSurveyToQuestions(survey: CustomSurvey): SurveyQuestion[] {
-  return survey.questions.map((q) => ({
-    id: q.id?.trim() || newSurveyQuestionClientId(),
-    question: q.question,
-    answers: q.answers.map((a) => ({
-      id: a.id?.trim() || customSurveyAnswerId(q.question, a.answer),
+export function customSurveyToBoardQuestion(survey: CustomSurvey): SurveyQuestion {
+  const qText = survey.question
+  return {
+    id: survey.id,
+    question: qText,
+    answers: survey.answers.map((a) => ({
+      id: a.id?.trim() || customSurveyAnswerId(qText, a.answer),
       answer: a.answer,
       points: a.points,
     })),
-  }))
+  }
 }
 
 export function resolvePackQuestions(
@@ -75,7 +88,7 @@ export function resolvePackQuestions(
   const FREE_PACKS = surveyPacks.filter(p => p.is_free);
   const PREMIUM_PACKS = surveyPacks.filter(p => !p.is_free);
   const fallbackQuestions = FREE_PACKS[0]?.questions ?? [];
-  const allCustom = customSurveys.flatMap(customSurveyToQuestions);
+  const allCustom = customSurveys.map(customSurveyToBoardQuestion);
   if (packId === "random") {
     const base = [...FREE_PACKS.flatMap(p => p.questions), ...PREMIUM_PACKS.flatMap(p => p.questions)];
     return allCustom.length ? [...allCustom, ...base] : base;
@@ -85,7 +98,7 @@ export function resolvePackQuestions(
   const pp = PREMIUM_PACKS.find(p => p.id === packId); if (pp) return pp.questions;
   const coll = customCollections.find(c => c.id === packId);
   if (coll) {
-    const r = customSurveys.filter(s => s.collectionId === coll.id).flatMap(customSurveyToQuestions);
+    const r = customSurveys.filter(s => s.collectionId === coll.id).map(customSurveyToBoardQuestion);
     return r.length ? r : fallbackQuestions;
   }
   return fallbackQuestions;
@@ -142,11 +155,23 @@ function coerceParsedQuestion(r: { id?: unknown; question?: unknown; answers?: u
 
 export function parseCustomData(text: string): SurveyQuestion[] | null {
   try {
-    const d = JSON.parse(text);
-    const raw = Array.isArray(d) ? d : d.questions && Array.isArray(d.questions) ? d.questions : null;
-    if (!raw) return null;
-    return raw.map((r: { id?: unknown; question?: unknown; answers?: unknown }) => coerceParsedQuestion(r));
-  } catch { return null; }
+    const d = JSON.parse(text) as unknown
+    let raw: unknown[] | null = null
+    if (Array.isArray(d)) raw = d
+    else if (
+      d &&
+      typeof d === 'object' &&
+      d !== null &&
+      'question' in d &&
+      'answers' in d &&
+      typeof (d as { question: unknown }).question === 'string' &&
+      Array.isArray((d as { answers: unknown }).answers)
+    ) {
+      raw = [d as { id?: unknown; question: unknown; answers: unknown }]
+    }
+    if (!raw) return null
+    return raw.map((r) => coerceParsedQuestion(r as { id?: unknown; question?: unknown; answers?: unknown }))
+  } catch { return null }
 }
 
 /**

@@ -177,7 +177,7 @@ export function HowToPlayModal({ onClose }: { onClose: () => void }) {
     { icon: '⚡', title: 'Face-Off', body: "Each round opens with a face-off. One player from each team buzzes in first — press A (Team 1) or L (Team 2), or tap your team tile. The first to buzz in answers. Guess the #1 answer and your team controls the board. Miss, and the other team takes control." },
     { icon: '📋', title: 'Play the Board', body: "The controlling team guesses answers one at a time. Every correct answer earns its point value. Rack up 3 wrong answers and you're out — the other team gets one shot to steal all the points on the board with a single guess." },
     { icon: '🏆', title: 'Win the Game', body: "Points stack up across every round. Most points when the last round ends wins. Ties mean a rematch — no complaints." },
-    { icon: '💡', title: 'Good to Know', body: "• Hit ⟳ Skip Question during the face-off to swap in a different question\n• Use the ⚙️ menu mid-game to adjust the timer or end the game early\n• Build your own surveys from the setup screen" },
+    { icon: '💡', title: 'Good to Know', body: "• Hit ⟳ Skip Question during the face-off to swap in a different question\n• Use the ⚙️ menu mid-game to adjust the timer or end the game early\n• Add face-off prompts under My Surveys (one prompt per row)" },
   ]
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(8px)' }}>
@@ -228,7 +228,7 @@ export function ConversionModal({ reason, onClose, onSignUp, onSignIn }: Convers
   const benefits = [
     { icon: '🎟', title: '4 Free Tokens', desc: 'Yours on signup. No card required.', highlight: true },
     { icon: '🃏', title: '6 Survey Packs', desc: 'Home Life, Food & Drink, Work Life, Game Night, and more.' },
-    { icon: '✏', title: 'Custom Surveys', desc: 'Build your own questions and organize them into collections.' },
+    { icon: '✏', title: 'Custom Surveys', desc: 'Add face-off prompts, one per survey row, and sort them into collections.' },
     { icon: '🚫', title: 'Ad-Free Gameplay', desc: 'No interruptions. Just the game.' },
     { icon: '🎮', title: 'Game History', desc: 'Track every win across all your game nights.' },
   ]

@@ -169,9 +169,10 @@ model su_survey_answers {
 model su_custom_surveys {
   id            String   @id @default(uuid())
   user_id       String
-  name          String
+  name          String?
   collection_id String?
-  questions     Json
+  question      String
+  answers       Json
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
 }

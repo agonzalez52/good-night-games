@@ -1,5 +1,8 @@
 import { z } from 'zod'
 
+const CUSTOM_SURVEY_QUESTION_MAX_LENGTH = 200
+const CUSTOM_SURVEY_ANSWER_MAX_LENGTH = 100
+
 export const spendTokensSchema = z.object({
   amount: z.number().int().positive(),
 })
@@ -9,20 +12,44 @@ export const tokenPurchaseSchema = z.object({
   bundleId: z.string().uuid(),
 })
 
-export const createSurveySchema = z.object({
-  name: z.string().min(1).max(100),
-  collectionId: z.string().uuid().nullable().optional(),
-  questions: z.array(z.object({
-    question: z.string().min(1),
-    answers: z.array(z.object({
-      answer: z.string().min(1),
-      points: z.number().int().min(1).max(100),
-    })).min(2).max(8),
-  })).min(1),
+const customSurveyAnswer = z.object({
+  answer: z.string().min(1).max(CUSTOM_SURVEY_ANSWER_MAX_LENGTH),
+  points: z.coerce.number().int().min(1).max(100),
+})
+
+/** Optional display title: null / omit / empty / whitespace → null; max 100 on non-empty trimmed text. */
+const optionalCustomSurveyName = z.preprocess(
+  (v) => {
+    if (v === undefined || v === null || v === '') return null
+    if (typeof v !== 'string') return v
+    const t = v.trim()
+    return t.length === 0 ? null : t
+  },
+  z.union([z.null(), z.string().max(100)])
+)
+
+/** Single face-off line + 2–8 answers; one row in `su_custom_surveys` */
+export const createCustomSurveyBodySchema = z.object({
+  name: optionalCustomSurveyName,
+  /** Empty string (common from HTML forms) is coerced to null so it does not fail the UUID check. */
+  collectionId: z.preprocess(
+    (v) => (v === '' ? null : v),
+    z.string().uuid().nullable().optional()
+  ),
+  question: z.string().min(1).max(CUSTOM_SURVEY_QUESTION_MAX_LENGTH),
+  answers: z.array(customSurveyAnswer).min(2).max(8),
 })
 
 export const createCollectionSchema = z.object({
   name: z.string().min(1).max(100),
+})
+
+/** PATCH /api/survey-showdown/custom-surveys/:id/collection — move to folder or null (uncategorized) */
+export const updateSurveyCollectionBodySchema = z.object({
+  collectionId: z.preprocess(
+    (v) => (v === '' ? null : v),
+    z.union([z.string().uuid(), z.null()])
+  ),
 })
 
 export const judgeSchema = z.object({

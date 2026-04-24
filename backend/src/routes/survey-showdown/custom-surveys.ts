@@ -1,11 +1,28 @@
 import { Hono } from 'hono'
 import { requireAuth, AuthVariables } from '../../middleware/auth'
 import { prisma } from '../../lib/prisma'
-import { createSurveySchema, createCollectionSchema } from '../../schemas/zod'
+import { createCustomSurveyBodySchema, createCollectionSchema, updateSurveyCollectionBodySchema } from '../../schemas/zod'
+import { ZodError } from 'zod'
 
 const MAX_CUSTOM_SURVEYS = 40
+const MAX_CUSTOM_COLLECTIONS = 20
 
 const customSurveys = new Hono<{ Variables: AuthVariables }>()
+
+const invalidRequestResponse = (error: ZodError) => ({
+  error: 'Invalid request',
+  details: error.flatten(),
+})
+
+const userOwnsCollection = async (userId: string, collectionId: string | null | undefined) => {
+  if (!collectionId) return true
+
+  const collection = await prisma.su_custom_survey_collections.findUnique({
+    where: { id: collectionId },
+    select: { user_id: true },
+  })
+  return collection?.user_id === userId
+}
 
 // All survey routes require auth
 customSurveys.use('/*', requireAuth)
@@ -38,8 +55,13 @@ customSurveys.post('/', async (c) => {
   const userId = c.get('userId')
   try {
     const body = await c.req.json()
-    const parsed = createSurveySchema.safeParse(body)
-    if (!parsed.success) return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400)
+    const parsed = createCustomSurveyBodySchema.safeParse(body)
+    if (!parsed.success) return c.json(invalidRequestResponse(parsed.error), 400)
+
+    const hasValidCollection = await userOwnsCollection(userId, parsed.data.collectionId)
+    if (!hasValidCollection) {
+      return c.json({ error: 'Collection not found' }, 404)
+    }
 
     const count = await prisma.su_custom_surveys.count({ where: { user_id: userId } })
     if (count >= MAX_CUSTOM_SURVEYS) {
@@ -51,12 +73,44 @@ customSurveys.post('/', async (c) => {
         user_id: userId,
         name: parsed.data.name,
         collection_id: parsed.data.collectionId ?? null,
-        questions: parsed.data.questions,
+        question: parsed.data.question,
+        answers: parsed.data.answers,
       },
     })
     return c.json(survey, 201)
   } catch (error) {
     console.error('POST /api/survey-showdown/custom-surveys error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// PATCH /api/survey-showdown/custom-surveys/:id/collection
+// Sets collection_id only (e.g. drag between folders) — no full upsert, owner only
+customSurveys.patch('/:id/collection', async (c) => {
+  const userId = c.get('userId')
+  const id = c.req.param('id')
+  try {
+    const existing = await prisma.su_custom_surveys.findUnique({ where: { id } })
+    if (!existing || existing.user_id !== userId) {
+      return c.json({ error: 'Not found' }, 404)
+    }
+
+    const body = await c.req.json()
+    const parsed = updateSurveyCollectionBodySchema.safeParse(body)
+    if (!parsed.success) return c.json(invalidRequestResponse(parsed.error), 400)
+
+    const hasValidCollection = await userOwnsCollection(userId, parsed.data.collectionId)
+    if (!hasValidCollection) {
+      return c.json({ error: 'Collection not found' }, 404)
+    }
+
+    const updated = await prisma.su_custom_surveys.update({
+      where: { id },
+      data: { collection_id: parsed.data.collectionId },
+    })
+    return c.json(updated)
+  } catch (error) {
+    console.error('PATCH /api/survey-showdown/custom-surveys/:id/collection error:', error)
     return c.json({ error: 'Internal server error' }, 500)
   }
 })
@@ -73,15 +127,21 @@ customSurveys.put('/:id', async (c) => {
     }
 
     const body = await c.req.json()
-    const parsed = createSurveySchema.safeParse(body)
-    if (!parsed.success) return c.json({ error: 'Invalid request' }, 400)
+    const parsed = createCustomSurveyBodySchema.safeParse(body)
+    if (!parsed.success) return c.json(invalidRequestResponse(parsed.error), 400)
+
+    const hasValidCollection = await userOwnsCollection(userId, parsed.data.collectionId)
+    if (!hasValidCollection) {
+      return c.json({ error: 'Collection not found' }, 404)
+    }
 
     const updated = await prisma.su_custom_surveys.update({
       where: { id },
       data: {
         name: parsed.data.name,
         collection_id: parsed.data.collectionId ?? null,
-        questions: parsed.data.questions,
+        question: parsed.data.question,
+        answers: parsed.data.answers,
       },
     })
     return c.json(updated)
@@ -110,12 +170,18 @@ customSurveys.delete('/:id', async (c) => {
 })
 
 // POST /api/survey-showdown/custom-surveys/collections
+// Creates a collection — enforces 20-collection limit
 customSurveys.post('/collections', async (c) => {
   const userId = c.get('userId')
   try {
     const body = await c.req.json()
     const parsed = createCollectionSchema.safeParse(body)
-    if (!parsed.success) return c.json({ error: 'Invalid request' }, 400)
+    if (!parsed.success) return c.json(invalidRequestResponse(parsed.error), 400)
+
+    const count = await prisma.su_custom_survey_collections.count({ where: { user_id: userId } })
+    if (count >= MAX_CUSTOM_COLLECTIONS) {
+      return c.json({ error: `Collection limit of ${MAX_CUSTOM_COLLECTIONS} reached` }, 403)
+    }
 
     const collection = await prisma.su_custom_survey_collections.create({
       data: { user_id: userId, name: parsed.data.name },
@@ -139,7 +205,7 @@ customSurveys.put('/collections/:id', async (c) => {
 
     const body = await c.req.json()
     const parsed = createCollectionSchema.safeParse(body)
-    if (!parsed.success) return c.json({ error: 'Invalid request' }, 400)
+    if (!parsed.success) return c.json(invalidRequestResponse(parsed.error), 400)
 
     const updated = await prisma.su_custom_survey_collections.update({
       where: { id },
