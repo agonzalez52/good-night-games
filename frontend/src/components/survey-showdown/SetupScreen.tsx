@@ -66,6 +66,7 @@ export default function SetupScreen({
   const [showReferral, setShowReferral] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showAuthFromPicker, setShowAuthFromPicker] = useState(false)
+  const [showAiJudgingInfo, setShowAiJudgingInfo] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 320 })
   const pickerTriggerRef = useRef<HTMLButtonElement>(null)
@@ -107,6 +108,7 @@ export default function SetupScreen({
     (customCollections.some(c => c.id === selectedPackId) &&
       customSurveys.some(s => s.collectionId === selectedPackId))
   const canStart = !packsLoading && hasSurveySource
+  const isAuthenticated = Boolean(currentUser)
 
   return (
     <div ref={screenRef} style={{ minHeight: '100vh', background: 'radial-gradient(ellipse 80% 60% at 50% -10%,rgba(77,126,255,0.12) 0%,transparent 70%),#060914', display: 'flex', flexDirection: 'column', fontFamily: 'var(--font-body)', position: 'relative' }}>
@@ -138,27 +140,44 @@ export default function SetupScreen({
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 24, animation: 'logoIn 0.7s cubic-bezier(0.34,1.56,0.64,1) both' }}>
           <div style={{ fontFamily: 'var(--font-outfit)', fontWeight: 800, fontSize: 25, color: 'var(--text-faint)', marginBottom: 10 }}>good night games</div>
-          <div style={{ display: 'inline-block', position: 'relative', verticalAlign: 'top' }}>
-            {/* AnswerTile-shaped outline: no fill, gold border, centered on the line between SURVEY / SHOWDOWN */}
-            <div
-              aria-hidden
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: 'calc(100% + clamp(36px, 8vw, 72px))',
-                height: 'clamp(40.25px, 6.51vw, 68.10px)',
-                borderRadius: 14,
-                border: '5px solid var(--gold)',
-                background: 'transparent',
-                boxSizing: 'border-box',
-                opacity: 0.85,
-                pointerEvents: 'none',
-                zIndex: 0,
-              }}
-            />
-            <div style={{ position: 'relative', zIndex: 1, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(44px,8vw,88px)', color: 'var(--gold)', letterSpacing: '-0.01em', lineHeight: 0.92, animation: 'glow 3.5s ease-in-out infinite', textShadow: '0 4px 0 rgba(0,0,0,0.4), 0 0 60px rgba(240,165,0,0.45), 0 0 120px rgba(240,165,0,0.2)' }}>SURVEY<br />SHOWDOWN</div>
+          <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2, verticalAlign: 'top' }}>
+            {['SURVEY', 'SHOWDOWN'].map(word => (
+              <div
+                key={word}
+                style={{
+                  position: 'relative',
+                  display: 'inline-block',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 800,
+                  fontSize: 'clamp(44px,8vw,88px)',
+                  color: 'var(--gold)',
+                  letterSpacing: '-0.01em',
+                  lineHeight: 0.92,
+                  animation: 'glow 3.5s ease-in-out infinite',
+                  textShadow: '0 4px 0 rgba(0,0,0,0.4), 0 0 60px rgba(240,165,0,0.45), 0 0 120px rgba(240,165,0,0.2)',
+                }}
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '58%',
+                    transform: 'translate(-50%, -50%)',
+                    width: '125%',
+                    height: '0.7em',
+                    borderRadius: 14,
+                    border: '5px solid var(--gold)',
+                    background: 'transparent',
+                    boxSizing: 'border-box',
+                    opacity: 0.85,
+                    pointerEvents: 'none',
+                    zIndex: 0,
+                  }}
+                />
+                <span style={{ position: 'relative', zIndex: 1 }}>{word}</span>
+              </div>
+            ))}
           </div>
           <div style={{ marginTop: 14 }}>
             <button onClick={() => setShowHowToPlay(true)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3, padding: 0 }}>How to Play</button>
@@ -235,14 +254,74 @@ export default function SetupScreen({
             </div>
           </div>
 
-          {/* Buzz key hint */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '10px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
-            {[{ key: 'A', label: 'Team 1 Buzz' }, { key: 'L', label: 'Team 2 Buzz' }].map(({ key, label }) => (
-              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(240,165,0,0.12)', border: '1px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-score)', fontSize: 15, color: '#F0A500' }}>{key}</div>
-                <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)' }}>{label}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)', position: 'relative' }}>
+            <span
+              aria-hidden
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: isAuthenticated ? 'var(--green)' : 'var(--red)',
+                boxShadow: isAuthenticated ? '0 0 10px var(--green-glow)' : '0 0 10px var(--red-glow)',
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+              {isAuthenticated ? 'AI Judging Enabled' : 'AI Judging Disabled'}
+            </span>
+            {!isAuthenticated && (
+              <div style={{ position: 'relative', display: 'inline-flex' }}>
+                <button
+                  type="button"
+                  aria-label="How to enable AI judging"
+                  onMouseEnter={() => setShowAiJudgingInfo(true)}
+                  onMouseLeave={() => setShowAiJudgingInfo(false)}
+                  onFocus={() => setShowAiJudgingInfo(true)}
+                  onBlur={() => setShowAiJudgingInfo(false)}
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    border: '1px solid var(--border-2)',
+                    background: 'rgba(255,255,255,0.04)',
+                    color: 'var(--text-muted)',
+                    fontFamily: 'var(--font-display)',
+                    fontSize: 12,
+                    lineHeight: 1,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'help',
+                    padding: 0,
+                  }}
+                >
+                  i
+                </button>
+                {showAiJudgingInfo && (
+                  <div
+                    role="tooltip"
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 8px)',
+                      right: 0,
+                      width: 260,
+                      padding: '10px 11px',
+                      borderRadius: 10,
+                      border: '1px solid var(--border-2)',
+                      background: 'rgba(6,9,20,0.98)',
+                      color: 'var(--text-muted)',
+                      fontFamily: 'var(--font-body)',
+                      fontSize: 11,
+                      lineHeight: 1.4,
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                      zIndex: 20,
+                    }}
+                  >
+                    Only exact matching will be used. Sign up or sign in to enable AI judging.
+                  </div>
+                )}
               </div>
-            ))}
+            )}
           </div>
 
           {/* Start Game */}

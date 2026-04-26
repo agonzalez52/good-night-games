@@ -327,6 +327,8 @@ export default function SetupHeader({
 
   const initials = currentUser?.username ? currentUser.username.slice(0, 2).toUpperCase() : '?'
   const balance = currentUser?.tokenBalance ?? 0
+  const referralsClaimed = currentUser?.referralsClaimed || 0
+  const canOpenReferral = Boolean(currentUser?.emailVerified) && referralsClaimed < 3
   const zeroBal = currentUser && balance === 0
   /** Session is syncing (e.g. after sign-in) — hide logged-in/out chrome until /me + balance return */
   const headerPending = authLoading && !currentUser
@@ -355,8 +357,8 @@ export default function SetupHeader({
                 <TokenSVG size={14} />
                 <span style={{ fontFamily: 'var(--font-score)', fontSize: 18, color: zeroBal ? '#FF4D6A' : '#F0A500', lineHeight: 1 }}>{balance}</span>
               </div>
-              {currentUser.emailVerified && (currentUser.referralsClaimed || 0) < 3 && (() => {
-                const claimed = currentUser.referralsClaimed || 0
+              {canOpenReferral && (() => {
+                const claimed = referralsClaimed
                 const pct = Math.round((claimed / 3) * 100)
                 return (
                   <button onClick={() => onOpenReferral()} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 100, background: 'rgba(15,217,138,0.06)', border: '1px solid rgba(15,217,138,0.25)', cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap', animation: claimed === 0 ? 'greenPulse 2.6s ease-in-out infinite' : 'none' }}>
@@ -404,7 +406,7 @@ export default function SetupHeader({
                     {[
                       { icon: '✏', label: 'My Surveys & Collections', fn: () => { onOpenCustomSurveys(); setOpen(false) } },
                       { icon: '🎮', label: 'Game History', fn: () => { onOpenGameHistory(); setOpen(false) } },
-                      { icon: '👥', label: 'Refer a Friend', fn: () => { onOpenReferral(); setOpen(false) } },
+                      ...(canOpenReferral ? [{ icon: '👥', label: 'Refer a Friend', fn: () => { onOpenReferral(); setOpen(false) } }] : []),
                       { icon: '💬', label: 'Feedback', fn: () => { onOpenFeedback(); setOpen(false) } },
                     ].map(({ icon, label, fn }) => (
                       <button key={label} onClick={fn} style={{ width: '100%', padding: '9px 10px', borderRadius: 9, fontSize: 13, fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--text-muted)', border: 'none', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', cursor: 'pointer' }}>
