@@ -72,17 +72,21 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
     tickRef.current = setInterval(() => {
       setTimeLeft(prev => {
         const next = prev - 1
-        if (next <= 0) { clearInterval(tickRef.current!); return 0 }
+        if (next <= 0) {
+          clearInterval(tickRef.current!)
+          if (!result) {
+            setTimerActive(false)
+            playTimerExpire()
+            setTimerExpiredFor(buzzed)
+          }
+          return 0
+        }
         if (next <= 5) playTick()
         return next
       })
     }, 1000)
     return () => clearInterval(tickRef.current!)
-  }, [timerActive])
-
-  useEffect(() => {
-    if (timeLeft === 0 && timerActive && !result) { setTimerActive(false); playTimerExpire(); setTimerExpiredFor(buzzed) }
-  }, [timeLeft, timerActive, result])
+  }, [timerActive, result, buzzed])
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {

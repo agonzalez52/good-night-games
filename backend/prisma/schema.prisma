@@ -120,6 +120,17 @@ model game_sessions {
   metadata  Json?
 }
 
+model signup_verification_challenges {
+  id         String   @id @default(uuid())
+  user_id    String
+  token_hash String   @unique
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+}
+
 model su_survey_packs {
   id          String                 @id @default(uuid())
   name        String

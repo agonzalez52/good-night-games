@@ -89,3 +89,8 @@ export const signupProviderHintSchema = z.object({
   /** When using Bearer token, must match JWT sub so we do not rely on client email matching alone. */
   supabaseUserId: z.string().uuid().optional(),
 })
+
+/** POST /api/auth/confirm-signup-verification */
+export const confirmSignupVerificationSchema = z.object({
+  challenge: z.string().min(24).max(256),
+})

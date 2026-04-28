@@ -271,7 +271,7 @@ export function ReferralModal({ onClose, currentUser }: ReferralModalProps) {
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 10, letterSpacing: '0.16em', color: 'var(--text-faint)', textTransform: 'uppercase', marginBottom: 10 }}>How It Works</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[
-              { n: '1', text: <span>Invite up to 3 friends <strong style={{ color: 'var(--text)', fontWeight: 600 }}>using your unique link</strong> — direct signups won't count</span> },
+              { n: '1', text: <span>Invite up to 3 friends <strong style={{ color: 'var(--text)', fontWeight: 600 }}>using your unique link</strong> — direct signups won&apos;t count</span> },
               { n: '2', text: <span>Each friend must <strong style={{ color: 'var(--text)', fontWeight: 600 }}>claim their 4 free signup tokens</strong> (verify email)</span> },
             ].map(({ n, text }) => (
               <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>

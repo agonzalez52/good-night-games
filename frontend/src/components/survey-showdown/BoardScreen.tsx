@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import GameMenu from '@/components/survey-showdown/GameMenu'
 import { AdBanner } from '@/components/survey-showdown/AdBanner'
-import { judgeAnswer, playBuzz, playReveal, playTick, SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH } from '@/lib/constants'
+import { judgeAnswer, playBuzz, playReveal, SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH } from '@/lib/constants'
 import type { Answer, SurveyQuestion } from '@/lib/constants'
 
 interface Team { name: string; score: number }
@@ -47,10 +47,11 @@ function XMark({ count }: { count: number }) {
 
 function BetweenRoundNext({ isTokenGame, onNextRound, roundNumber }: { isTokenGame: boolean; onNextRound: () => void; roundNumber: number }) {
   const [countdown, setCountdown] = useState(isTokenGame ? 0 : 5)
-  const [ready, setReady] = useState(isTokenGame)
+  const ready = isTokenGame || countdown <= 0
+
   useEffect(() => {
     if (isTokenGame) return
-    if (countdown <= 0) { setReady(true); return }
+    if (countdown <= 0) return
     const t = setTimeout(() => setCountdown(c => c - 1), 1000)
     return () => clearTimeout(t)
   }, [countdown, isTokenGame])
@@ -198,7 +199,7 @@ export default function BoardScreen({ currentQuestion, teams, controllingTeam, f
               <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 10, letterSpacing: '0.22em', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' }}>Game Over</div>
               {gameWinner !== null ? (
                 <><div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(24px,4vw,44px)', color: '#F0A500', letterSpacing: '0.02em', animation: 'glow 2s infinite' }}>🏆 {roundResult.updatedTeams[gameWinner].name}</div><div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: 'var(--text-muted)', letterSpacing: '0.06em', marginBottom: 8 }}>Wins with {roundResult.updatedTeams[gameWinner].score} points!</div></>
-              ) : <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 34, color: '#F0A500', marginBottom: 8, animation: 'glow 2s infinite' }}>It's a Tie!</div>}
+              ) : <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 34, color: '#F0A500', marginBottom: 8, animation: 'glow 2s infinite' }}>It&apos;s a Tie!</div>}
               <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 18 }}>
                 {roundResult.updatedTeams.map((t, i) => (
                   <div key={i} style={{ padding: '12px 24px', borderRadius: 14, textAlign: 'center', background: i === gameWinner ? 'rgba(240,165,0,0.1)' : 'rgba(255,255,255,0.03)', border: i === gameWinner ? '1px solid rgba(240,165,0,0.45)' : '1px solid rgba(255,255,255,0.08)' }}>

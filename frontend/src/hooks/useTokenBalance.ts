@@ -20,7 +20,10 @@ export function useTokenBalance(
   onBalanceChange: (balance: number) => void,
 ): { refresh: () => Promise<void> } {
   const onBalanceRef = useRef(onBalanceChange)
-  onBalanceRef.current = onBalanceChange
+
+  useEffect(() => {
+    onBalanceRef.current = onBalanceChange
+  }, [onBalanceChange])
 
   const refresh = useCallback(async () => {
     const token = await getAccessToken()

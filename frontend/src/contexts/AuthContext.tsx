@@ -13,6 +13,7 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import type { CurrentUser } from '@/lib/constants'
+import { confirmSignupVerification } from '@/lib/api/auth'
 import {
   claimReferral,
   getReferralData,
@@ -78,6 +79,22 @@ function parseReferralPayload(raw: unknown): ReferralDataResponse | null {
   }
 }
 
+function readSignupVerificationChallenge(): string | null {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('verify_signup') !== '1') return null
+  const challenge = params.get('challenge')?.trim()
+  return challenge ? challenge : null
+}
+
+function clearSignupVerificationParams(): void {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.searchParams.delete('verify_signup')
+  url.searchParams.delete('challenge')
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
@@ -85,8 +102,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     userId: string
     data: ReferralDataResponse
   } | null>(null)
-  /** Collapses concurrent POST /verify-email (INITIAL_SESSION + Strict Mode, etc.). Resolves to response ok. */
-  const verifyEmailInFlight = useRef<Promise<boolean> | null>(null)
+  /** Collapses concurrent confirm calls (INITIAL_SESSION + Strict Mode, etc.) for one challenge token. */
+  const confirmSignupInFlight = useRef<Promise<void> | null>(null)
+  /** Prevents duplicate failed attempts for the same challenge while params remain in URL. */
+  const processedSignupChallenge = useRef<string | null>(null)
 
   /**
    * Uses the session passed in — never call supabase.auth.getSession() from inside
@@ -159,7 +178,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const supabase = createClient()
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
     let cancelled = false
     let subscription: { unsubscribe: () => void } | null = null
 
@@ -175,7 +193,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setLoading(false)
           }
           if (event === 'SIGNED_OUT') {
-            verifyEmailInFlight.current = null
+            confirmSignupInFlight.current = null
+            processedSignupChallenge.current = null
             setCurrentUser(null)
             setReferralCache(null)
             setLoading(false)
@@ -201,33 +220,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (sessionUserId) {
                 setReferralCache(prev => (prev && prev.userId !== sessionUserId ? null : prev))
               }
-              const runVerifyEmail =
-                session.user.email_confirmed_at &&
+              const challenge = readSignupVerificationChallenge()
+              const shouldConfirmSignup =
                 session.access_token &&
+                challenge &&
+                processedSignupChallenge.current !== challenge &&
                 (event === 'SIGNED_IN' ||
                   event === 'USER_UPDATED' ||
                   event === 'INITIAL_SESSION')
-              if (runVerifyEmail) {
-                verifyEmailInFlight.current ??= (async () => {
+              if (shouldConfirmSignup && session.access_token && challenge) {
+                confirmSignupInFlight.current ??= (async () => {
                   try {
-                    const res = await fetch(`${backendUrl}/api/auth/verify-email`, {
-                      method: 'POST',
-                      headers: { Authorization: `Bearer ${session.access_token}` },
-                    })
-                    return res.ok
+                    await confirmSignupVerification(session.access_token, challenge)
+                    clearSignupVerificationParams()
+                    processedSignupChallenge.current = challenge
+                    try {
+                      const claimResult = await claimReferral(session.access_token)
+                      if (claimResult.success) updateTokenBalance(claimResult.balance)
+                    } catch {
+                      // Referral claim must not block profile sync (network / 5xx / malformed body only).
+                    }
+                  } catch {
+                    processedSignupChallenge.current = challenge
                   } finally {
-                    verifyEmailInFlight.current = null
+                    confirmSignupInFlight.current = null
                   }
                 })()
-                const verifyOk = await verifyEmailInFlight.current
-                if (verifyOk && session.access_token) {
-                  try {
-                    const claimResult = await claimReferral(session.access_token)
-                    if (claimResult.success) updateTokenBalance(claimResult.balance)
-                  } catch {
-                    // Referral claim must not block profile sync (network / 5xx / malformed body only).
-                  }
-                }
+                await confirmSignupInFlight.current
               }
               const { user: profile, referral: referralPayload } = await fetchUserProfile(session)
               if (!cancelled) {
@@ -287,7 +306,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const referralSnapshot = useMemo((): ReferralDataResponse | null => {
     if (!referralCache || !currentUser || referralCache.userId !== currentUser.id) return null
     return referralCache.data
-  }, [referralCache, currentUser?.id])
+  }, [referralCache, currentUser])
 
   const value = useMemo<AuthContextValue>(
     () => ({

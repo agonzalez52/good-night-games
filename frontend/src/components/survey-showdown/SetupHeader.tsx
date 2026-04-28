@@ -6,6 +6,8 @@ import AuthModal from '@/components/shared/AuthModal'
 import type { CurrentUser, CustomSurvey, CustomCollection } from '@/lib/constants'
 import type { SurveyPackFreeListItem, SurveyPackPremiumListItem, SurveyPackTag } from '@/lib/api/survey-showdown/survey-packs'
 import { PackTagPillsResponsive } from '@/components/survey-showdown/pack-tag-pills'
+import { createClient } from '@/lib/supabase/client'
+import { sendSignupVerification } from '@/lib/api/auth'
 
 const isMockMode = process.env.NEXT_PUBLIC_MOCK_MODE === 'true'
 
@@ -18,6 +20,42 @@ interface VerificationBannerProps {
 export function VerificationBanner({ email, onClaim }: VerificationBannerProps) {
   const [dismissed, setDismissed] = useState(false)
   const [claimed, setClaimed] = useState(false)
+  const [isSending, setIsSending] = useState(false)
+  const [resendMessage, setResendMessage] = useState('')
+  const [resendError, setResendError] = useState(false)
+
+  async function handleResendVerification() {
+    setResendMessage('')
+    setResendError(false)
+    setIsSending(true)
+    try {
+      const supabase = createClient()
+      const { data } = await supabase.auth.getSession()
+      const accessToken = data.session?.access_token
+      if (!accessToken) {
+        setResendMessage('Please sign in again, then resend the verification email.')
+        setResendError(true)
+        return
+      }
+      const result = await sendSignupVerification(accessToken)
+      if (result.alreadyVerified) {
+        setClaimed(true)
+        setResendMessage('Email already verified. Signup bonus is already available on this account.')
+        return
+      }
+      if (result.sent) {
+        setResendMessage('Verification email sent. Check your inbox and spam folder.')
+        return
+      }
+      setResendMessage('A verification email was already sent recently. Please check your inbox.')
+    } catch {
+      setResendMessage('Could not resend right now. Please try again in a moment.')
+      setResendError(true)
+    } finally {
+      setIsSending(false)
+    }
+  }
+
   if (dismissed) return null
   return (
     <div style={{ width: '100%', background: 'linear-gradient(90deg,rgba(77,126,255,0.18),rgba(77,126,255,0.1))', borderBottom: '1px solid rgba(77,126,255,0.25)', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
@@ -26,11 +64,30 @@ export function VerificationBanner({ email, onClaim }: VerificationBannerProps) 
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', minWidth: 0 }}>
           {claimed
             ? <span style={{ color: '#0FD98A' }}>✓ Email confirmed! <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 free tokens</span> added to your account.</span>
-            : <span>Check your email <span style={{ color: 'var(--text)' }}>({email})</span> to claim your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 free tokens</span></span>
+            : (
+              <span>
+                Account access is unlocked. Verify <span style={{ color: 'var(--text)' }}>{email}</span> to unlock your{' '}
+                <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+              </span>
+            )
           }
+          {resendMessage && (
+            <div style={{ marginTop: 4, color: resendError ? '#FF4D6A' : 'var(--text-faint)' }}>
+              {resendMessage}
+            </div>
+          )}
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        {!claimed && (
+          <button
+            onClick={() => void handleResendVerification()}
+            disabled={isSending}
+            style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', background: 'rgba(77,126,255,0.2)', color: '#4D7EFF', border: '1px solid rgba(77,126,255,0.35)', opacity: isSending ? 0.38 : 1 }}
+          >
+            {isSending ? 'SENDING...' : 'RESEND EMAIL'}
+          </button>
+        )}
         {/* MOCK MODE ONLY */}
         {isMockMode && !claimed && (
           <button onClick={() => { setClaimed(true); onClaim(); setTimeout(() => setDismissed(true), 2500) }}

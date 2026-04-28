@@ -195,22 +195,27 @@ export async function judgeAnswer(
 }
 
 // ─── SOUNDS ───────────────────────────────────────────────────────────────────
-function audioCtx() { return new (window.AudioContext || (window as any).webkitAudioContext)(); }
+function audioCtx() {
+  const audioCtor = window.AudioContext
+    ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!audioCtor) throw new Error('Web Audio API is not available in this browser')
+  return new audioCtor()
+}
 
 export function playBuzz() {
-  try { const c = audioCtx(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "sawtooth"; o.frequency.value = 120; g.gain.setValueAtTime(0.5, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.6); o.start(); o.stop(c.currentTime + 0.6); } catch (_) { }
+  try { const c = audioCtx(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "sawtooth"; o.frequency.value = 120; g.gain.setValueAtTime(0.5, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.6); o.start(); o.stop(c.currentTime + 0.6); } catch { }
 }
 export function playReveal() {
-  try { const c = audioCtx(); [523, 659, 784, 1047].forEach((freq, i) => { const o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = freq; o.type = "triangle"; g.gain.setValueAtTime(0.3, c.currentTime + i * 0.08); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + i * 0.08 + 0.25); o.start(c.currentTime + i * 0.08); o.stop(c.currentTime + i * 0.08 + 0.3); }); } catch (_) { }
+  try { const c = audioCtx(); [523, 659, 784, 1047].forEach((freq, i) => { const o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = freq; o.type = "triangle"; g.gain.setValueAtTime(0.3, c.currentTime + i * 0.08); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + i * 0.08 + 0.25); o.start(c.currentTime + i * 0.08); o.stop(c.currentTime + i * 0.08 + 0.3); }); } catch { }
 }
 export function playBuzzerIn() {
-  try { const c = audioCtx(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "square"; o.frequency.value = 440; g.gain.setValueAtTime(0.4, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.2); o.start(); o.stop(c.currentTime + 0.2); } catch (_) { }
+  try { const c = audioCtx(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "square"; o.frequency.value = 440; g.gain.setValueAtTime(0.4, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.2); o.start(); o.stop(c.currentTime + 0.2); } catch { }
 }
 export function playTick() {
-  try { const c = audioCtx(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "sine"; o.frequency.value = 1200; g.gain.setValueAtTime(0.15, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.06); o.start(); o.stop(c.currentTime + 0.08); } catch (_) { }
+  try { const c = audioCtx(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "sine"; o.frequency.value = 1200; g.gain.setValueAtTime(0.15, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.06); o.start(); o.stop(c.currentTime + 0.08); } catch { }
 }
 export function playTimerExpire() {
-  try { const c = audioCtx(); [300, 240, 180].forEach((freq, i) => { const o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "sawtooth"; o.frequency.value = freq; g.gain.setValueAtTime(0.35, c.currentTime + i * 0.18); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + i * 0.18 + 0.35); o.start(c.currentTime + i * 0.18); o.stop(c.currentTime + i * 0.18 + 0.4); }); } catch (_) { }
+  try { const c = audioCtx(); [300, 240, 180].forEach((freq, i) => { const o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "sawtooth"; o.frequency.value = freq; g.gain.setValueAtTime(0.35, c.currentTime + i * 0.18); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + i * 0.18 + 0.35); o.start(c.currentTime + i * 0.18); o.stop(c.currentTime + i * 0.18 + 0.4); }); } catch { }
 }
 export function playCoinCollect(count = 8) {
   try {
@@ -227,5 +232,5 @@ export function playCoinCollect(count = 8) {
       o.start(t); o.stop(t + 0.2);
     });
     setTimeout(() => c.close(), 3000);
-  } catch (_) { }
+  } catch { }
 }

@@ -6,7 +6,6 @@ import SetupHeader, {
   SurveyPackPicker,
   SurveyPackDropdown,
   HowToPlayModal,
-  ConversionModal,
 } from '@/components/survey-showdown/SetupHeader'
 import { AdBanner } from '@/components/survey-showdown/AdBanner'
 import { FeedbackModal, ReferralModal, GameHistoryModal } from '@/components/survey-showdown/Modals'
@@ -74,11 +73,7 @@ export default function SetupScreen({
   const screenRef = useRef<HTMLDivElement>(null)
   const timerOptions = [3, 5, 10]
   const maxRounds = Math.max(packQuestions.length, setupRoundCountCap, 1)
-
-  useEffect(() => {
-    if (packsLoading) return
-    setNumRounds(n => Math.min(n, maxRounds))
-  }, [maxRounds, packsLoading])
+  const clampedNumRounds = Math.min(numRounds, maxRounds)
 
   useEffect(() => {
     function h(e: MouseEvent) {
@@ -109,6 +104,7 @@ export default function SetupScreen({
       customSurveys.some(s => s.collectionId === selectedPackId))
   const canStart = !packsLoading && hasSurveySource
   const isAuthenticated = Boolean(currentUser)
+  const aiJudgingPending = authLoading && !currentUser
 
   return (
     <div ref={screenRef} style={{ minHeight: '100vh', background: 'radial-gradient(ellipse 80% 60% at 50% -10%,rgba(77,126,255,0.12) 0%,transparent 70%),#060914', display: 'flex', flexDirection: 'column', fontFamily: 'var(--font-body)', position: 'relative' }}>
@@ -230,9 +226,9 @@ export default function SetupScreen({
               ) : (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-                    <button type="button" onClick={() => setNumRounds(r => Math.max(1, r - 1))} style={{ width: 32, height: 32, borderRadius: 9, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                    <div style={{ fontFamily: 'var(--font-score)', fontSize: 44, color: '#F0A500', minWidth: 40, textAlign: 'center', lineHeight: 1, textShadow: '0 0 20px rgba(240,165,0,0.3)' }}>{numRounds}</div>
-                    <button type="button" onClick={() => setNumRounds(r => Math.min(maxRounds, r + 1))} style={{ width: 32, height: 32, borderRadius: 9, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                    <button type="button" onClick={() => setNumRounds(r => Math.max(1, Math.min(r, maxRounds) - 1))} style={{ width: 32, height: 32, borderRadius: 9, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                    <div style={{ fontFamily: 'var(--font-score)', fontSize: 44, color: '#F0A500', minWidth: 40, textAlign: 'center', lineHeight: 1, textShadow: '0 0 20px rgba(240,165,0,0.3)' }}>{clampedNumRounds}</div>
+                    <button type="button" onClick={() => setNumRounds(r => Math.min(maxRounds, Math.min(r, maxRounds) + 1))} style={{ width: 32, height: 32, borderRadius: 9, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
                   </div>
                   <div style={{ color: 'var(--text-faint)', fontSize: 10, fontFamily: 'var(--font-body)', marginTop: 5 }}>{maxRounds} available</div>
                 </>
@@ -254,79 +250,91 @@ export default function SetupScreen({
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)', position: 'relative' }}>
-            <span
-              aria-hidden
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                background: isAuthenticated ? 'var(--green)' : 'var(--red)',
-                boxShadow: isAuthenticated ? '0 0 10px var(--green-glow)' : '0 0 10px var(--red-glow)',
-                flexShrink: 0,
-              }}
-            />
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-              {isAuthenticated ? 'AI Judging Enabled' : 'AI Judging Disabled'}
-            </span>
-            {!isAuthenticated && (
-              <div style={{ position: 'relative', display: 'inline-flex' }}>
-                <button
-                  type="button"
-                  aria-label="How to enable AI judging"
-                  onMouseEnter={() => setShowAiJudgingInfo(true)}
-                  onMouseLeave={() => setShowAiJudgingInfo(false)}
-                  onFocus={() => setShowAiJudgingInfo(true)}
-                  onBlur={() => setShowAiJudgingInfo(false)}
+          <div
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)', position: 'relative' }}
+            aria-busy={aiJudgingPending}
+          >
+            {aiJudgingPending ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%' }} aria-hidden>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite', flexShrink: 0 }} />
+                <div style={{ width: 170, height: 12, borderRadius: 6, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} />
+              </div>
+            ) : (
+              <>
+                <span
+                  aria-hidden
                   style={{
-                    width: 18,
-                    height: 18,
+                    width: 10,
+                    height: 10,
                     borderRadius: '50%',
-                    border: '1px solid var(--border-2)',
-                    background: 'rgba(255,255,255,0.04)',
-                    color: 'var(--text-muted)',
-                    fontFamily: 'var(--font-display)',
-                    fontSize: 12,
-                    lineHeight: 1,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'help',
-                    padding: 0,
+                    background: isAuthenticated ? 'var(--green)' : 'var(--red)',
+                    boxShadow: isAuthenticated ? '0 0 10px var(--green-glow)' : '0 0 10px var(--red-glow)',
+                    flexShrink: 0,
                   }}
-                >
-                  i
-                </button>
-                {showAiJudgingInfo && (
-                  <div
-                    role="tooltip"
-                    style={{
-                      position: 'absolute',
-                      top: 'calc(100% + 8px)',
-                      right: 0,
-                      width: 260,
-                      padding: '10px 11px',
-                      borderRadius: 10,
-                      border: '1px solid var(--border-2)',
-                      background: 'rgba(6,9,20,0.98)',
-                      color: 'var(--text-muted)',
-                      fontFamily: 'var(--font-body)',
-                      fontSize: 11,
-                      lineHeight: 1.4,
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                      zIndex: 20,
-                    }}
-                  >
-                    Only exact matching will be used. Sign up or sign in to enable AI judging.
+                />
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                  {isAuthenticated ? 'AI Judging Enabled' : 'AI Judging Disabled'}
+                </span>
+                {!isAuthenticated && (
+                  <div style={{ position: 'relative', display: 'inline-flex' }}>
+                    <button
+                      type="button"
+                      aria-label="How to enable AI judging"
+                      onMouseEnter={() => setShowAiJudgingInfo(true)}
+                      onMouseLeave={() => setShowAiJudgingInfo(false)}
+                      onFocus={() => setShowAiJudgingInfo(true)}
+                      onBlur={() => setShowAiJudgingInfo(false)}
+                      style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: '50%',
+                        border: '1px solid var(--border-2)',
+                        background: 'rgba(255,255,255,0.04)',
+                        color: 'var(--text-muted)',
+                        fontFamily: 'var(--font-display)',
+                        fontSize: 12,
+                        lineHeight: 1,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'help',
+                        padding: 0,
+                      }}
+                    >
+                      i
+                    </button>
+                    {showAiJudgingInfo && (
+                      <div
+                        role="tooltip"
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 8px)',
+                          right: 0,
+                          width: 260,
+                          padding: '10px 11px',
+                          borderRadius: 10,
+                          border: '1px solid var(--border-2)',
+                          background: 'rgba(6,9,20,0.98)',
+                          color: 'var(--text-muted)',
+                          fontFamily: 'var(--font-body)',
+                          fontSize: 11,
+                          lineHeight: 1.4,
+                          boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                          zIndex: 20,
+                        }}
+                      >
+                        Only exact matching will be used. Sign up or sign in to enable AI judging.
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+              </>
             )}
           </div>
 
           {/* Start Game */}
           <button
-            onClick={() => onStart(team1 || 'TEAM 1', team2 || 'TEAM 2', timerSecs, numRounds)}
+            onClick={() => onStart(team1 || 'TEAM 1', team2 || 'TEAM 2', timerSecs, clampedNumRounds)}
             disabled={!canStart}
             style={{
               width: '100%', padding: '16px 24px', borderRadius: 14, fontSize: 20, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.1em', background: 'linear-gradient(135deg,#F0A500 0%,#C07A00 100%)', color: '#fff', border: 'none', boxShadow: '0 6px 28px rgba(240,165,0,0.4),inset 0 1px 0 rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
