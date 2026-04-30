@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Hono } from 'hono'
 
-const { prismaMock, supabaseAuthMock } = vi.hoisted(() => ({
+const { prismaMock, supabaseAuthMock, sendEmailMock } = vi.hoisted(() => ({
   prismaMock: {
     users: {
       findUnique: vi.fn(),
@@ -16,15 +16,20 @@ const { prismaMock, supabaseAuthMock } = vi.hoisted(() => ({
       create: vi.fn(),
     },
     signup_verification_challenges: {
+      create: vi.fn(),
+      deleteMany: vi.fn(),
       findFirst: vi.fn(),
       updateMany: vi.fn(),
     },
     $transaction: vi.fn(),
   },
   supabaseAuthMock: {
-    signInWithOtp: vi.fn(),
+    admin: {
+      generateLink: vi.fn(),
+    },
     getUser: vi.fn(),
   },
+  sendEmailMock: vi.fn(),
 }))
 
 vi.mock('../middleware/auth', () => ({
@@ -44,9 +49,15 @@ vi.mock('../lib/supabase', () => ({
   },
 }))
 
+vi.mock('../lib/email', () => ({
+  sendEmail: sendEmailMock,
+}))
+
 import authRoutes from './auth'
 
 const FREE_SIGNUP_TOKENS = 4
+const SIGNUP_BONUS_BUNDLE_ID = 'email_verification_bonus'
+const REFERRAL_CLAIM_BUNDLE_ID = 'referral_claim_bonus'
 
 interface VerificationChallenge {
   id: string
@@ -220,5 +231,267 @@ describe('POST /api/auth/confirm-signup-verification', () => {
     expect(state.purchases).toBe(0)
     expect(state.user.email_verified).toBe(false)
     expect(state.user.signup_tokens_credited).toBe(false)
+  })
+})
+
+describe('POST /api/auth/send-signup-verification', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('sends callback link preserving verify_signup and challenge params', async () => {
+    prismaMock.users.findUnique.mockResolvedValue({
+      email: 'player@example.com',
+      email_verified: false,
+      signup_tokens_credited: false,
+    })
+    prismaMock.signup_verification_challenges.create.mockResolvedValue({ id: 'challenge_1' })
+    prismaMock.signup_verification_challenges.deleteMany.mockResolvedValue({ count: 0 })
+    supabaseAuthMock.admin.generateLink.mockResolvedValue({
+      data: {
+        properties: {
+          action_link:
+            'https://example-project.supabase.co/auth/v1/verify?token=abc&type=magiclink&redirect_to=' +
+            encodeURIComponent(
+              'http://localhost:3000/auth/callback?next=%2Fsurvey-showdown&verify_signup=1&challenge=test_challenge',
+            ),
+        },
+      },
+      error: null,
+    })
+    sendEmailMock.mockResolvedValue(undefined)
+
+    const app = makeApp()
+    const res = await app.request('/api/auth/send-signup-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      success: true,
+      sent: true,
+      alreadyVerified: false,
+      alreadyCredited: false,
+    })
+
+    expect(sendEmailMock).toHaveBeenCalledTimes(1)
+    const payload = sendEmailMock.mock.calls[0]?.[0] as {
+      templateId?: string
+      variables?: { APP_NAME?: string; TOKEN_COUNT?: string; VERIFY_URL?: string }
+    }
+    expect(payload.templateId).toBe('6cedbceb-8deb-416b-aa85-6c537d5e0696')
+    expect(payload.variables?.APP_NAME).toBe('Survey Showdown')
+    expect(payload.variables?.TOKEN_COUNT).toBe('4')
+    expect(payload.variables?.VERIFY_URL).toBeTruthy()
+
+    const verifyUrl = new URL(payload.variables!.VERIFY_URL!)
+    expect(verifyUrl.pathname).toBe('/auth/v1/verify')
+    const redirectTo = verifyUrl.searchParams.get('redirect_to')
+    expect(redirectTo).toBeTruthy()
+    const callbackUrl = new URL(redirectTo!)
+    expect(callbackUrl.pathname).toBe('/auth/callback')
+    expect(callbackUrl.searchParams.get('next')).toBe('/survey-showdown')
+    expect(callbackUrl.searchParams.get('verify_signup')).toBe('1')
+    expect(callbackUrl.searchParams.get('challenge')?.length ?? 0).toBeGreaterThanOrEqual(10)
+  })
+
+  it('rolls back fresh challenge when email send fails', async () => {
+    const generatedActionLink = 'https://example-project.supabase.co/auth/v1/verify?token=abc&type=magiclink'
+    prismaMock.users.findUnique.mockResolvedValue({
+      email: 'player@example.com',
+      email_verified: false,
+      signup_tokens_credited: false,
+    })
+    prismaMock.signup_verification_challenges.create.mockResolvedValue({ id: 'challenge_1' })
+    prismaMock.signup_verification_challenges.deleteMany.mockResolvedValue({ count: 1 })
+    supabaseAuthMock.admin.generateLink.mockResolvedValue({
+      data: {
+        properties: {
+          action_link: generatedActionLink,
+        },
+      },
+      error: null,
+    })
+    sendEmailMock.mockRejectedValue(new Error('provider unavailable'))
+
+    const app = makeApp()
+    const res = await app.request('/api/auth/send-signup-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    expect(res.status).toBe(502)
+    await expect(res.json()).resolves.toEqual({ error: 'Could not send verification email' })
+
+    expect(prismaMock.signup_verification_challenges.create).toHaveBeenCalledTimes(1)
+    expect(sendEmailMock).toHaveBeenCalledTimes(1)
+    const payload = sendEmailMock.mock.calls[0]?.[0] as {
+      templateId?: string
+      variables?: { APP_NAME?: string; TOKEN_COUNT?: string; VERIFY_URL?: string }
+    }
+    expect(payload.templateId).toBe('6cedbceb-8deb-416b-aa85-6c537d5e0696')
+    expect(payload.variables).toMatchObject({
+      APP_NAME: 'Survey Showdown',
+      TOKEN_COUNT: '4',
+      VERIFY_URL: generatedActionLink,
+    })
+    expect(prismaMock.signup_verification_challenges.deleteMany).toHaveBeenCalledTimes(1)
+    expect(prismaMock.signup_verification_challenges.deleteMany).toHaveBeenCalledWith({
+      where: {
+        user_id: 'user_1',
+        token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        used_at: null,
+      },
+    })
+  })
+})
+
+describe('POST /api/auth/confirm-oauth-signup', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  const wireGoogleOauthBonusMocks = () => {
+    prismaMock.users.findUnique.mockResolvedValue({ id: 'user_1' })
+    supabaseAuthMock.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'user_1',
+          app_metadata: { provider: 'google', providers: ['google'] },
+          identities: [{ provider: 'google' }],
+        },
+      },
+      error: null,
+    })
+
+    const state = {
+      isEmailVerified: false,
+      isSignupTokensCredited: false,
+      balance: 0,
+      purchases: 0,
+      purchaseBundleIds: [] as string[],
+    }
+
+    prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        users: {
+          updateMany: vi.fn().mockImplementation(async ({ where, data }: { where: { email_verified?: boolean; signup_tokens_credited?: boolean }; data: { email_verified?: boolean; signup_tokens_credited?: boolean } }) => {
+            if (where.email_verified === false && state.isEmailVerified === false && data.email_verified === true) {
+              state.isEmailVerified = true
+              return { count: 1 }
+            }
+            if (where.signup_tokens_credited === false && state.isSignupTokensCredited === false && data.signup_tokens_credited === true) {
+              state.isSignupTokensCredited = true
+              return { count: 1 }
+            }
+            return { count: 0 }
+          }),
+        },
+        user_tokens: {
+          findUnique: vi.fn().mockImplementation(async () => ({ balance: state.balance })),
+          upsert: vi.fn().mockImplementation(async ({ update, create }: { update?: { balance?: { increment?: number } }; create?: { balance: number } }) => {
+            const increment = update?.balance?.increment ?? 0
+            if (increment > 0) state.balance += increment
+            else if (create?.balance != null) state.balance = create.balance
+            return { balance: state.balance }
+          }),
+        },
+        purchases: {
+          create: vi.fn().mockImplementation(async ({ data }: { data: { bundle_id: string } }) => {
+            state.purchases += 1
+            state.purchaseBundleIds.push(data.bundle_id)
+          }),
+        },
+      }
+      return fn(tx)
+    })
+
+    return state
+  }
+
+  it('credits on first Google OAuth signup confirmation', async () => {
+    const state = wireGoogleOauthBonusMocks()
+
+    const app = makeApp()
+    const first = await app.request('/api/auth/confirm-oauth-signup', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-jwt' },
+    })
+
+    expect(first.status).toBe(200)
+    await expect(first.json()).resolves.toMatchObject({
+      success: true,
+      verified: true,
+      alreadyCredited: false,
+      email_verified: true,
+      balance: FREE_SIGNUP_TOKENS,
+    })
+    expect(state.balance).toBe(FREE_SIGNUP_TOKENS)
+    expect(state.isEmailVerified).toBe(true)
+    expect(state.isSignupTokensCredited).toBe(true)
+    expect(state.purchases).toBe(1)
+    expect(state.purchaseBundleIds).toEqual([SIGNUP_BONUS_BUNDLE_ID])
+    expect(state.purchaseBundleIds).not.toContain(REFERRAL_CLAIM_BUNDLE_ID)
+  })
+
+  it('is idempotent on repeated Google OAuth signup confirmation', async () => {
+    const state = wireGoogleOauthBonusMocks()
+
+    const app = makeApp()
+
+    const first = await app.request('/api/auth/confirm-oauth-signup', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-jwt' },
+    })
+    expect(first.status).toBe(200)
+    await expect(first.json()).resolves.toMatchObject({
+      success: true,
+      verified: true,
+      alreadyCredited: false,
+      email_verified: true,
+      balance: FREE_SIGNUP_TOKENS,
+    })
+
+    const second = await app.request('/api/auth/confirm-oauth-signup', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-jwt' },
+    })
+    expect(second.status).toBe(200)
+    await expect(second.json()).resolves.toMatchObject({
+      success: true,
+      verified: true,
+      alreadyCredited: true,
+      email_verified: true,
+      balance: FREE_SIGNUP_TOKENS,
+    })
+
+    expect(state.balance).toBe(FREE_SIGNUP_TOKENS)
+    expect(state.isEmailVerified).toBe(true)
+    expect(state.isSignupTokensCredited).toBe(true)
+    expect(state.purchases).toBe(1)
+  })
+
+  it('rejects non-Google auth users', async () => {
+    supabaseAuthMock.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'user_1',
+          app_metadata: { provider: 'email' },
+          identities: [{ provider: 'email' }],
+        },
+      },
+      error: null,
+    })
+
+    const app = makeApp()
+    const res = await app.request('/api/auth/confirm-oauth-signup', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-jwt' },
+    })
+
+    expect(res.status).toBe(403)
+    await expect(res.json()).resolves.toEqual({ error: 'OAuth provider is not Google' })
+    expect(prismaMock.$transaction).not.toHaveBeenCalled()
   })
 })

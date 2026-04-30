@@ -213,9 +213,13 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
     const refParam = searchParams.get('ref')?.trim()
     const referralCodeFromUrl = refParam ? refParam.toUpperCase() : ''
     const base = `${window.location.origin}/auth/callback`
-    const redirectTo = referralCodeFromUrl
-      ? `${base}?next=${encodeURIComponent('/survey-showdown')}&ref=${encodeURIComponent(referralCodeFromUrl)}`
-      : base
+    const callbackParams = new URLSearchParams()
+    if (referralCodeFromUrl) {
+      callbackParams.set('next', '/survey-showdown')
+      callbackParams.set('ref', referralCodeFromUrl)
+    }
+    if (mode === 'signup') callbackParams.set('oauth_signup', '1')
+    const redirectTo = callbackParams.size > 0 ? `${base}?${callbackParams.toString()}` : base
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo },

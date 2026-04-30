@@ -13,7 +13,7 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import type { CurrentUser } from '@/lib/constants'
-import { confirmSignupVerification } from '@/lib/api/auth'
+import { confirmOAuthSignup, confirmSignupVerification } from '@/lib/api/auth'
 import {
   claimReferral,
   getReferralData,
@@ -95,6 +95,19 @@ function clearSignupVerificationParams(): void {
   window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
 }
 
+function shouldConfirmOAuthSignup(): boolean {
+  if (typeof window === 'undefined') return false
+  const params = new URLSearchParams(window.location.search)
+  return params.get('oauth_signup') === '1'
+}
+
+function clearOAuthSignupParam(): void {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.searchParams.delete('oauth_signup')
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
@@ -106,6 +119,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const confirmSignupInFlight = useRef<Promise<void> | null>(null)
   /** Prevents duplicate failed attempts for the same challenge while params remain in URL. */
   const processedSignupChallenge = useRef<string | null>(null)
+  /** Collapses concurrent OAuth-signup confirm calls for one signed-in user. */
+  const confirmOAuthSignupInFlight = useRef<Promise<void> | null>(null)
+  /** Prevents duplicate failed OAuth signup confirms for the same user. */
+  const processedOAuthSignupUserId = useRef<string | null>(null)
 
   /**
    * Uses the session passed in — never call supabase.auth.getSession() from inside
@@ -195,6 +212,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (event === 'SIGNED_OUT') {
             confirmSignupInFlight.current = null
             processedSignupChallenge.current = null
+            confirmOAuthSignupInFlight.current = null
+            processedOAuthSignupUserId.current = null
             setCurrentUser(null)
             setReferralCache(null)
             setLoading(false)
@@ -247,6 +266,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   }
                 })()
                 await confirmSignupInFlight.current
+              }
+              const shouldConfirmOAuth =
+                session.access_token &&
+                shouldConfirmOAuthSignup() &&
+                processedOAuthSignupUserId.current !== session.user.id &&
+                (event === 'SIGNED_IN' ||
+                  event === 'USER_UPDATED' ||
+                  event === 'INITIAL_SESSION')
+              if (shouldConfirmOAuth && session.access_token) {
+                confirmOAuthSignupInFlight.current ??= (async () => {
+                  try {
+                    await confirmOAuthSignup(session.access_token)
+                    try {
+                      const claimResult = await claimReferral(session.access_token)
+                      if (claimResult.success) updateTokenBalance(claimResult.balance)
+                    } catch {
+                      // Referral claim must not block profile sync (network / 5xx / malformed body only).
+                    }
+                  } finally {
+                    clearOAuthSignupParam()
+                    processedOAuthSignupUserId.current = session.user.id
+                    confirmOAuthSignupInFlight.current = null
+                  }
+                })()
+                await confirmOAuthSignupInFlight.current
               }
               const { user: profile, referral: referralPayload } = await fetchUserProfile(session)
               if (!cancelled) {

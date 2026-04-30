@@ -13,9 +13,11 @@ export async function GET(request: NextRequest) {
   const next = searchParams.get('next') ?? '/survey-showdown'
   const ref = searchParams.get('ref')
   const verifySignup = searchParams.get('verify_signup')
+  const oauthSignup = searchParams.get('oauth_signup')
   const challenge = searchParams.get('challenge')?.trim()
   const buildNextRedirect = (): URL => {
     const redirectUrl = new URL(next, origin)
+    if (oauthSignup === '1') redirectUrl.searchParams.set('oauth_signup', '1')
     if (verifySignup === '1' && challenge) {
       redirectUrl.searchParams.set('verify_signup', '1')
       redirectUrl.searchParams.set('challenge', challenge)

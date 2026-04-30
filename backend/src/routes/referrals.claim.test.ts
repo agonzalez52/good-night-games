@@ -34,6 +34,7 @@ interface ReferralState {
   referredBalance: number
   referrerBalance: number
   purchases: number
+  claimTransitions: number
 }
 
 const makeApp = (): Hono => {
@@ -57,6 +58,7 @@ const wireReferralMocks = (state: ReferralState): void => {
         updateMany: vi.fn().mockImplementation(async ({ where }: { where: { status: ReferralStatus } }) => {
           if (state.status !== where.status) return { count: 0 }
           state.status = ReferralStatus.CLAIMED
+          state.claimTransitions += 1
           return { count: 1 }
         }),
         findUnique: vi.fn().mockImplementation(async () => ({
@@ -93,6 +95,7 @@ describe('POST /api/referrals/claim', () => {
       referredBalance: 0,
       referrerBalance: 0,
       purchases: 0,
+      claimTransitions: 0,
     }
     wireReferralMocks(state)
     const app = makeApp()
@@ -117,5 +120,7 @@ describe('POST /api/referrals/claim', () => {
     expect(state.referrerBalance).toBe(2)
     expect(state.purchases).toBe(2)
     expect(state.status).toBe(ReferralStatus.CLAIMED)
+    expect(state.claimTransitions).toBe(1)
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1)
   })
 })

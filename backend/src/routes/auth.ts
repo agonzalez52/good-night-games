@@ -3,6 +3,7 @@ import { Prisma, ReferralStatus } from '@prisma/client'
 import { createHash, randomBytes } from 'node:crypto'
 import { requireAuth, AuthVariables } from '../middleware/auth'
 import { prisma } from '../lib/prisma'
+import { sendEmail } from '../lib/email'
 import { supabaseAdmin } from '../lib/supabase'
 import { confirmSignupVerificationSchema, signupProviderHintSchema } from '../schemas/zod'
 
@@ -11,6 +12,9 @@ const FREE_SIGNUP_TOKENS = 4
 const SIGNUP_BONUS_BUNDLE_ID = 'email_verification_bonus'
 const SIGNUP_VERIFY_NEXT_PATH = '/survey-showdown'
 const SIGNUP_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000
+const SIGNUP_VERIFICATION_EMAIL_TEMPLATE_ID = '6cedbceb-8deb-416b-aa85-6c537d5e0696'
+const SIGNUP_VERIFICATION_APP_NAME = 'Survey Showdown'
+const SIGNUP_VERIFICATION_TOKEN_COUNT = '4'
 
 const auth = new Hono<{ Variables: AuthVariables }>()
 
@@ -38,6 +42,26 @@ function buildSignupVerificationRedirect(challenge: string): string {
   callbackUrl.searchParams.set('verify_signup', '1')
   callbackUrl.searchParams.set('challenge', challenge)
   return callbackUrl.toString()
+}
+
+async function createSignupVerificationMagicLink(email: string, challenge: string): Promise<string> {
+  const redirectTo = buildSignupVerificationRedirect(challenge)
+  const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+    type: 'magiclink',
+    email,
+    options: { redirectTo },
+  })
+
+  if (error) {
+    throw new Error(`Could not generate signup verification magic link: ${error.message}`)
+  }
+
+  const actionLink = data.properties?.action_link?.trim()
+  if (!actionLink) {
+    throw new Error('Could not generate signup verification magic link: missing action link')
+  }
+
+  return actionLink
 }
 
 async function claimSignupVerificationBonus(
@@ -157,16 +181,19 @@ auth.post('/send-signup-verification', requireAuth, async (c) => {
       },
     })
 
-    const redirectTo = buildSignupVerificationRedirect(challenge)
-    const { error: sendError } = await supabaseAdmin.auth.signInWithOtp({
-      email: user.email,
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo: redirectTo,
-      },
-    })
-
-    if (sendError) {
+    let verificationUrl = ''
+    try {
+      verificationUrl = await createSignupVerificationMagicLink(user.email, challenge)
+      await sendEmail({
+        to: user.email,
+        templateId: SIGNUP_VERIFICATION_EMAIL_TEMPLATE_ID,
+        variables: {
+          APP_NAME: SIGNUP_VERIFICATION_APP_NAME,
+          TOKEN_COUNT: SIGNUP_VERIFICATION_TOKEN_COUNT,
+          VERIFY_URL: verificationUrl,
+        },
+      })
+    } catch (sendError) {
       await prisma.signup_verification_challenges.deleteMany({
         where: { user_id: userId, token_hash: tokenHash, used_at: null },
       })
@@ -359,6 +386,15 @@ function appMetaIndicatesGoogle(meta: unknown): boolean {
   return Array.isArray(providers) && providers.some(p => p === 'google')
 }
 
+function supabaseUserIndicatesGoogle(user: {
+  app_metadata?: unknown
+  identities?: Array<{ provider?: string | null }> | null
+}): boolean {
+  if (appMetaIndicatesGoogle(user.app_metadata)) return true
+  if (!Array.isArray(user.identities)) return false
+  return user.identities.some(identity => identity?.provider === 'google')
+}
+
 /** True if this email already has a Google-linked auth user (signUp often omits identities in the JSON response). */
 async function emailHasGoogleAuthUser(emailNormalized: string): Promise<boolean> {
   const profile = await prisma.users.findUnique({
@@ -448,6 +484,45 @@ auth.post('/signup-provider-hint', async (c) => {
     return c.json({ has_google_provider: hasGoogleProvider })
   } catch (error) {
     console.error('POST /api/auth/signup-provider-hint error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// POST /api/auth/confirm-oauth-signup
+// Confirms Google OAuth signup and grants one-time signup bonus idempotently.
+auth.post('/confirm-oauth-signup', requireAuth, async (c) => {
+  const userId = c.get('userId')
+
+  try {
+    const authHeader = c.req.header('Authorization')
+    const jwt = authHeader?.replace(/^Bearer\s+/i, '')?.trim() ?? ''
+    if (!jwt) return c.json({ error: 'Unauthorized' }, 401)
+
+    const { data: { user: authUser }, error: authError } = await supabaseAdmin.auth.getUser(jwt)
+    if (authError || !authUser || authUser.id !== userId) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+    if (!supabaseUserIndicatesGoogle(authUser)) {
+      return c.json({ error: 'OAuth provider is not Google' }, 403)
+    }
+
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    })
+    if (!user) return c.json({ error: 'User not found' }, 404)
+
+    const bonus = await prisma.$transaction((tx) => claimSignupVerificationBonus(tx, userId))
+
+    return c.json({
+      success: true,
+      verified: true,
+      alreadyCredited: !bonus.credited,
+      email_verified: true,
+      balance: bonus.balance,
+    })
+  } catch (error) {
+    console.error('POST /api/auth/confirm-oauth-signup error:', error)
     return c.json({ error: 'Internal server error' }, 500)
   }
 })

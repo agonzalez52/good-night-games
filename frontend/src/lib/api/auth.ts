@@ -17,6 +17,39 @@ export interface ConfirmSignupVerificationResponse {
   balance: number
 }
 
+interface ConfirmSignupVerificationResponseBody {
+  success?: unknown
+  verified?: unknown
+  alreadyCredited?: unknown
+  email_verified?: unknown
+  balance?: unknown
+}
+
+const parseConfirmSignupVerificationResponse = (
+  data: unknown,
+  fallbackErrorMessage: string,
+): ConfirmSignupVerificationResponse => {
+  const body = data as ConfirmSignupVerificationResponseBody
+
+  if (
+    body.success === true &&
+    body.verified === true &&
+    typeof body.alreadyCredited === 'boolean' &&
+    typeof body.email_verified === 'boolean' &&
+    typeof body.balance === 'number'
+  ) {
+    return {
+      success: true,
+      verified: true,
+      alreadyCredited: body.alreadyCredited,
+      email_verified: body.email_verified,
+      balance: body.balance,
+    }
+  }
+
+  throw new Error(fallbackErrorMessage)
+}
+
 export async function sendSignupVerification(token: string): Promise<SendSignupVerificationResponse> {
   const res = await fetch(`${BACKEND_URL}/api/auth/send-signup-verification`, {
     method: 'POST',
@@ -77,29 +110,21 @@ export async function confirmSignupVerification(
     throw new Error(typeof err.error === 'string' ? err.error : 'Failed to verify email')
   }
 
-  const body = data as {
-    success?: unknown
-    verified?: unknown
-    alreadyCredited?: unknown
-    email_verified?: unknown
-    balance?: unknown
+  return parseConfirmSignupVerificationResponse(data, 'Failed to verify email')
+}
+
+export async function confirmOAuthSignup(token: string): Promise<ConfirmSignupVerificationResponse> {
+  const res = await fetch(`${BACKEND_URL}/api/auth/confirm-oauth-signup`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+  const data: unknown = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = data as { error?: string }
+    throw new Error(typeof err.error === 'string' ? err.error : 'Failed to confirm OAuth signup')
   }
 
-  if (
-    body.success === true &&
-    body.verified === true &&
-    typeof body.alreadyCredited === 'boolean' &&
-    typeof body.email_verified === 'boolean' &&
-    typeof body.balance === 'number'
-  ) {
-    return {
-      success: true,
-      verified: true,
-      alreadyCredited: body.alreadyCredited,
-      email_verified: body.email_verified,
-      balance: body.balance,
-    }
-  }
-
-  throw new Error('Failed to verify email')
+  return parseConfirmSignupVerificationResponse(data, 'Failed to confirm OAuth signup')
 }
