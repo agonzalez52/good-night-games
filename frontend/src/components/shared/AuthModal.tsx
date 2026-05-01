@@ -4,6 +4,11 @@ import { useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { sendSignupVerification } from '@/lib/api/auth'
+import {
+  getVerificationFailureFeedback,
+  VERIFY_DELIVERY_STATE,
+  type VerifyDeliveryState,
+} from '@/lib/auth/verification-feedback'
 import TokenSVG from '@/components/shared/TokenSVG'
 import type { CurrentUser } from '@/lib/constants'
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
@@ -46,6 +51,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
   const [isResendingVerification, setIsResendingVerification] = useState(false)
   const [verifyMessage, setVerifyMessage] = useState('')
   const [verifyMessageError, setVerifyMessageError] = useState(false)
+  const [verifyDeliveryState, setVerifyDeliveryState] = useState<VerifyDeliveryState>(VERIFY_DELIVERY_STATE.SENT)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const turnstileRef = useRef<TurnstileInstance>(null)
   const [forgotTurnstileToken, setForgotTurnstileToken] = useState<string | null>(null)
@@ -183,12 +189,30 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
         id: data.user.id, email, username: username || email.split('@')[0],
         tokenBalance: 0, emailVerified: false, referralsClaimed: 0,
       })
+      setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
+      setVerifyMessage('')
+      setVerifyMessageError(false)
       if (accessToken) {
         try {
-          await sendSignupVerification(accessToken)
-        } catch {
-          // Non-blocking: user can resend from the in-app verification banner.
+          const verificationResult = await sendSignupVerification(accessToken)
+          if (verificationResult.alreadyVerified) {
+            setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
+            setVerifyMessage('Email already verified. Your signup bonus is already unlocked.')
+            setVerifyMessageError(false)
+          }
+          if (!verificationResult.sent) {
+            setVerifyMessage('Verification email was already sent recently. Please check your inbox.')
+          }
+        } catch (verificationError) {
+          const feedback = getVerificationFailureFeedback(verificationError)
+          setVerifyDeliveryState(feedback.state)
+          setVerifyMessage(feedback.message)
+          setVerifyMessageError(true)
         }
+      } else {
+        setVerifyDeliveryState(VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE)
+        setVerifyMessage('Could not send verification right now. Try resend or continue and verify later.')
+        setVerifyMessageError(true)
       }
       setMode('verify')
       return
@@ -316,22 +340,31 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
       const { data } = await supabase.auth.getSession()
       const accessToken = data.session?.access_token
       if (!accessToken) {
+        setVerifyDeliveryState(VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE)
         setVerifyMessage('Please sign in again, then resend verification.')
         setVerifyMessageError(true)
         return
       }
       const result = await sendSignupVerification(accessToken)
       if (result.alreadyVerified) {
+        setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
         setVerifyMessage('Email already verified. Your signup bonus is already unlocked.')
+        setVerifyMessageError(false)
         return
       }
       if (result.sent) {
+        setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
         setVerifyMessage('Verification email sent. Check your inbox and spam folder.')
+        setVerifyMessageError(false)
         return
       }
+      setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
       setVerifyMessage('Verification email was sent recently. Please check your inbox.')
-    } catch {
-      setVerifyMessage('Could not resend right now. Please try again in a moment.')
+      setVerifyMessageError(false)
+    } catch (verificationError) {
+      const feedback = getVerificationFailureFeedback(verificationError)
+      setVerifyDeliveryState(feedback.state)
+      setVerifyMessage(feedback.message)
       setVerifyMessageError(true)
     } finally {
       setIsResendingVerification(false)
@@ -560,24 +593,36 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
         {isVerify && (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
             <div style={{ fontSize: 52, marginBottom: 16 }}>🎉</div>
-            <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: 24, textAlign: 'left' }}>
-              You are signed in and can start playing now. To unlock your signup bonus:
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
-                {[
-                  { n: '1', text: <span>Open the verification email sent to <span style={{ color: 'var(--text)' }}>{email}</span></span> },
-                  { n: '2', text: <span>Tap the verification link</span> },
-                ].map(({ n, text }) => (
-                  <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                    <div style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(240,165,0,0.15)', border: '1px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-display)', fontSize: 12, color: '#F0A500', flexShrink: 0, marginTop: 1 }}>{n}</div>
-                    <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, paddingTop: 3 }}>{text}</div>
+            {verifyDeliveryState === VERIFY_DELIVERY_STATE.SENT ? (
+              <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: 24, textAlign: 'left' }}>
+                You are signed in and can start playing now. To unlock your signup bonus:
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+                  {[
+                    { n: '1', text: <span>Open the verification email for <span style={{ color: 'var(--text)' }}>{email}</span></span> },
+                    { n: '2', text: <span>Tap the verification link</span> },
+                  ].map(({ n, text }) => (
+                    <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <div style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(240,165,0,0.15)', border: '1px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-display)', fontSize: 12, color: '#F0A500', flexShrink: 0, marginTop: 1 }}>{n}</div>
+                      <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, paddingTop: 3 }}>{text}</div>
+                    </div>
+                  ))}
+                  <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.6, paddingLeft: 32 }}>
+                    Verification unlocks your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span> and referral rewards.
                   </div>
-                ))}
-                <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.6, paddingLeft: 32 }}>
-                  Verification unlocks your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span> and referral rewards.
                 </div>
               </div>
-            </div>
-            {verifyMessage && (
+            ) : (
+              <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: 24, textAlign: 'left' }}>
+                You are signed in and can start playing now. We could not deliver a verification email yet.
+                <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, background: 'rgba(255,77,106,0.08)', border: '1px solid rgba(255,77,106,0.24)', fontSize: 12, color: '#FF8DA0', lineHeight: 1.6 }}>
+                  {verifyMessage || 'Could not send verification right now. Try resend or continue and verify later.'}
+                </div>
+                <div style={{ marginTop: 10, fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.6 }}>
+                  You can still play now. Use resend below and verify later to unlock your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+                </div>
+              </div>
+            )}
+            {verifyMessage && verifyDeliveryState === VERIFY_DELIVERY_STATE.SENT && (
               <div style={{ marginTop: -8, marginBottom: 14, textAlign: 'left', fontFamily: 'var(--font-body)', fontSize: 12, color: verifyMessageError ? '#FF4D6A' : 'var(--text-faint)' }}>
                 {verifyMessage}
               </div>

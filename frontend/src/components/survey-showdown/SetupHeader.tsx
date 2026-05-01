@@ -8,6 +8,11 @@ import type { SurveyPackFreeListItem, SurveyPackPremiumListItem, SurveyPackTag }
 import { PackTagPillsResponsive } from '@/components/survey-showdown/pack-tag-pills'
 import { createClient } from '@/lib/supabase/client'
 import { sendSignupVerification } from '@/lib/api/auth'
+import {
+  getVerificationFailureFeedback,
+  VERIFY_DELIVERY_STATE,
+  type VerifyDeliveryState,
+} from '@/lib/auth/verification-feedback'
 
 const isMockMode = process.env.NEXT_PUBLIC_MOCK_MODE === 'true'
 
@@ -23,6 +28,7 @@ export function VerificationBanner({ email, onClaim }: VerificationBannerProps) 
   const [isSending, setIsSending] = useState(false)
   const [resendMessage, setResendMessage] = useState('')
   const [resendError, setResendError] = useState(false)
+  const [deliveryState, setDeliveryState] = useState<VerifyDeliveryState>(VERIFY_DELIVERY_STATE.SENT)
 
   async function handleResendVerification() {
     setResendMessage('')
@@ -33,23 +39,29 @@ export function VerificationBanner({ email, onClaim }: VerificationBannerProps) 
       const { data } = await supabase.auth.getSession()
       const accessToken = data.session?.access_token
       if (!accessToken) {
+        setDeliveryState(VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE)
         setResendMessage('Please sign in again, then resend the verification email.')
         setResendError(true)
         return
       }
       const result = await sendSignupVerification(accessToken)
       if (result.alreadyVerified) {
+        setDeliveryState(VERIFY_DELIVERY_STATE.SENT)
         setClaimed(true)
         setResendMessage('Email already verified. Signup bonus is already available on this account.')
         return
       }
       if (result.sent) {
+        setDeliveryState(VERIFY_DELIVERY_STATE.SENT)
         setResendMessage('Verification email sent. Check your inbox and spam folder.')
         return
       }
+      setDeliveryState(VERIFY_DELIVERY_STATE.SENT)
       setResendMessage('A verification email was already sent recently. Please check your inbox.')
-    } catch {
-      setResendMessage('Could not resend right now. Please try again in a moment.')
+    } catch (verificationError) {
+      const feedback = getVerificationFailureFeedback(verificationError)
+      setDeliveryState(feedback.state)
+      setResendMessage(feedback.message)
       setResendError(true)
     } finally {
       setIsSending(false)
@@ -64,7 +76,17 @@ export function VerificationBanner({ email, onClaim }: VerificationBannerProps) 
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', minWidth: 0 }}>
           {claimed
             ? <span style={{ color: '#0FD98A' }}>✓ Email confirmed! <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 free tokens</span> added to your account.</span>
-            : (
+            : deliveryState === VERIFY_DELIVERY_STATE.TARGETED_FAILURE ? (
+              <span>
+                We could not verify delivery for <span style={{ color: 'var(--text)' }}>{email}</span>. Use a different email provider to unlock your{' '}
+                <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+              </span>
+            ) : deliveryState === VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE ? (
+              <span>
+                Verification email could not be sent right now. You can keep playing and retry to unlock your{' '}
+                <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+              </span>
+            ) : (
               <span>
                 Account access is unlocked. Verify <span style={{ color: 'var(--text)' }}>{email}</span> to unlock your{' '}
                 <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.

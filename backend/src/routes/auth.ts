@@ -15,6 +15,55 @@ const SIGNUP_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000
 const SIGNUP_VERIFICATION_EMAIL_TEMPLATE_ID = '6cedbceb-8deb-416b-aa85-6c537d5e0696'
 const SIGNUP_VERIFICATION_APP_NAME = 'Survey Showdown'
 const SIGNUP_VERIFICATION_TOKEN_COUNT = '4'
+const SIGNUP_VERIFICATION_SEND_ERROR = 'Could not send verification email'
+
+const SIGNUP_VERIFICATION_FAILURE_CATEGORIES = {
+  DISPOSABLE_DOMAIN: 'DISPOSABLE_DOMAIN',
+  RATE_LIMITED: 'RATE_LIMITED',
+  PROVIDER_TEMPORARY: 'PROVIDER_TEMPORARY',
+  UNKNOWN: 'UNKNOWN',
+} as const
+
+type SignupVerificationFailureCategory =
+  (typeof SIGNUP_VERIFICATION_FAILURE_CATEGORIES)[keyof typeof SIGNUP_VERIFICATION_FAILURE_CATEGORIES]
+
+interface SignupVerificationFailureContract {
+  status: 429 | 502
+  errorCode: string
+  errorCategory: SignupVerificationFailureCategory
+  message: string
+}
+
+const SIGNUP_VERIFICATION_FAILURE_RESPONSE_BY_CATEGORY: Record<
+  SignupVerificationFailureCategory,
+  SignupVerificationFailureContract
+> = {
+  DISPOSABLE_DOMAIN: {
+    status: 502,
+    errorCode: 'SIGNUP_VERIFICATION_DISPOSABLE_DOMAIN',
+    errorCategory: 'DISPOSABLE_DOMAIN',
+    message:
+      'This email provider is not supported for signup verification. Please use a different email address.',
+  },
+  RATE_LIMITED: {
+    status: 429,
+    errorCode: 'SIGNUP_VERIFICATION_RATE_LIMITED',
+    errorCategory: 'RATE_LIMITED',
+    message: 'Verification email sending is temporarily rate limited. Please try again in about a minute.',
+  },
+  PROVIDER_TEMPORARY: {
+    status: 502,
+    errorCode: 'SIGNUP_VERIFICATION_PROVIDER_TEMPORARY',
+    errorCategory: 'PROVIDER_TEMPORARY',
+    message: 'Email service is temporarily unavailable. Please try again shortly.',
+  },
+  UNKNOWN: {
+    status: 502,
+    errorCode: 'SIGNUP_VERIFICATION_UNKNOWN',
+    errorCategory: 'UNKNOWN',
+    message: 'Could not send verification email right now. Please try again.',
+  },
+}
 
 const auth = new Hono<{ Variables: AuthVariables }>()
 
@@ -34,6 +83,52 @@ function createSignupChallengeToken(): string {
 
 function hashSignupChallenge(challenge: string): string {
   return createHash('sha256').update(challenge).digest('hex')
+}
+
+function classifySignupVerificationSendFailure(error: unknown): SignupVerificationFailureContract {
+  const fallback = SIGNUP_VERIFICATION_FAILURE_RESPONSE_BY_CATEGORY.UNKNOWN
+  const errorMessage = error instanceof Error ? error.message : String(error)
+  const normalizedMessage = errorMessage.trim().toLowerCase()
+
+  if (normalizedMessage.length === 0) return fallback
+
+  const hasDisposableSignal =
+    normalizedMessage.includes('disposable') ||
+    normalizedMessage.includes('temporary inbox') ||
+    normalizedMessage.includes('mailinator') ||
+    normalizedMessage.includes('10minutemail') ||
+    normalizedMessage.includes('guerrillamail')
+  if (hasDisposableSignal) {
+    return SIGNUP_VERIFICATION_FAILURE_RESPONSE_BY_CATEGORY.DISPOSABLE_DOMAIN
+  }
+
+  const hasRateLimitSignal =
+    normalizedMessage.includes('rate limit') ||
+    normalizedMessage.includes('rate-limit') ||
+    normalizedMessage.includes('too many requests') ||
+    normalizedMessage.includes('throttl') ||
+    normalizedMessage.includes('quota exceeded') ||
+    normalizedMessage.includes('429')
+  if (hasRateLimitSignal) {
+    return SIGNUP_VERIFICATION_FAILURE_RESPONSE_BY_CATEGORY.RATE_LIMITED
+  }
+
+  const hasProviderTemporarySignal =
+    normalizedMessage.includes('temporar') ||
+    normalizedMessage.includes('provider unavailable') ||
+    normalizedMessage.includes('service unavailable') ||
+    normalizedMessage.includes('unavailable') ||
+    normalizedMessage.includes('timeout') ||
+    normalizedMessage.includes('timed out') ||
+    normalizedMessage.includes('try again later') ||
+    normalizedMessage.includes('connection reset') ||
+    normalizedMessage.includes('econnreset') ||
+    normalizedMessage.includes('socket hang up')
+  if (hasProviderTemporarySignal) {
+    return SIGNUP_VERIFICATION_FAILURE_RESPONSE_BY_CATEGORY.PROVIDER_TEMPORARY
+  }
+
+  return fallback
 }
 
 function buildSignupVerificationRedirect(challenge: string): string {
@@ -197,8 +292,20 @@ auth.post('/send-signup-verification', requireAuth, async (c) => {
       await prisma.signup_verification_challenges.deleteMany({
         where: { user_id: userId, token_hash: tokenHash, used_at: null },
       })
-      console.error('POST /api/auth/send-signup-verification send error:', sendError)
-      return c.json({ error: 'Could not send verification email' }, 502)
+      const classifiedFailure = classifySignupVerificationSendFailure(sendError)
+      console.error('POST /api/auth/send-signup-verification send error:', {
+        classifiedFailure,
+        sendError,
+      })
+      return c.json(
+        {
+          error: SIGNUP_VERIFICATION_SEND_ERROR,
+          errorCode: classifiedFailure.errorCode,
+          errorCategory: classifiedFailure.errorCategory,
+          message: classifiedFailure.message,
+        },
+        classifiedFailure.status
+      )
     }
 
     return c.json({

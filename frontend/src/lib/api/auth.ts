@@ -1,5 +1,38 @@
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
 
+export const EMAIL_FAILURE_CATEGORIES = {
+  DISPOSABLE_DOMAIN: 'DISPOSABLE_DOMAIN',
+  RATE_LIMITED: 'RATE_LIMITED',
+  PROVIDER_TEMPORARY: 'PROVIDER_TEMPORARY',
+  UNKNOWN: 'UNKNOWN',
+} as const
+
+export type EmailFailureCategory =
+  (typeof EMAIL_FAILURE_CATEGORIES)[keyof typeof EMAIL_FAILURE_CATEGORIES]
+
+export interface AuthApiErrorMetadata {
+  errorCode?: string
+  errorCategory?: EmailFailureCategory
+}
+
+interface AuthApiErrorOptions extends AuthApiErrorMetadata {
+  status: number
+}
+
+export class AuthApiError extends Error {
+  readonly status: number
+  readonly errorCode?: string
+  readonly errorCategory?: EmailFailureCategory
+
+  constructor(message: string, options: AuthApiErrorOptions) {
+    super(message)
+    this.name = 'AuthApiError'
+    this.status = options.status
+    this.errorCode = options.errorCode
+    this.errorCategory = options.errorCategory
+  }
+}
+
 export interface SendSignupVerificationResponse {
   success: true
   sent: boolean
@@ -23,6 +56,32 @@ interface ConfirmSignupVerificationResponseBody {
   alreadyCredited?: unknown
   email_verified?: unknown
   balance?: unknown
+}
+
+interface ApiErrorResponseBody {
+  error?: unknown
+  errorCode?: unknown
+  errorCategory?: unknown
+}
+
+const isEmailFailureCategory = (value: unknown): value is EmailFailureCategory =>
+  Object.values(EMAIL_FAILURE_CATEGORIES).includes(value as EmailFailureCategory)
+
+const parseAuthApiError = (
+  data: unknown,
+  fallbackErrorMessage: string,
+  status: number,
+): AuthApiError => {
+  const body = data as ApiErrorResponseBody
+  const message = typeof body.error === 'string' ? body.error : fallbackErrorMessage
+  const errorCode = typeof body.errorCode === 'string' ? body.errorCode : undefined
+  const errorCategory = isEmailFailureCategory(body.errorCategory) ? body.errorCategory : undefined
+
+  return new AuthApiError(message, {
+    status,
+    errorCode,
+    errorCategory,
+  })
 }
 
 const parseConfirmSignupVerificationResponse = (
@@ -60,8 +119,7 @@ export async function sendSignupVerification(token: string): Promise<SendSignupV
   })
   const data: unknown = await res.json().catch(() => ({}))
   if (!res.ok) {
-    const err = data as { error?: string }
-    throw new Error(typeof err.error === 'string' ? err.error : 'Failed to send verification email')
+    throw parseAuthApiError(data, 'Failed to send verification email', res.status)
   }
 
   const body = data as {
@@ -106,8 +164,7 @@ export async function confirmSignupVerification(
   })
   const data: unknown = await res.json().catch(() => ({}))
   if (!res.ok) {
-    const err = data as { error?: string }
-    throw new Error(typeof err.error === 'string' ? err.error : 'Failed to verify email')
+    throw parseAuthApiError(data, 'Failed to verify email', res.status)
   }
 
   return parseConfirmSignupVerificationResponse(data, 'Failed to verify email')
@@ -122,8 +179,7 @@ export async function confirmOAuthSignup(token: string): Promise<ConfirmSignupVe
   })
   const data: unknown = await res.json().catch(() => ({}))
   if (!res.ok) {
-    const err = data as { error?: string }
-    throw new Error(typeof err.error === 'string' ? err.error : 'Failed to confirm OAuth signup')
+    throw parseAuthApiError(data, 'Failed to confirm OAuth signup', res.status)
   }
 
   return parseConfirmSignupVerificationResponse(data, 'Failed to confirm OAuth signup')

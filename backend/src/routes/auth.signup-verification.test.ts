@@ -322,7 +322,12 @@ describe('POST /api/auth/send-signup-verification', () => {
     })
 
     expect(res.status).toBe(502)
-    await expect(res.json()).resolves.toEqual({ error: 'Could not send verification email' })
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'Could not send verification email',
+      errorCode: 'SIGNUP_VERIFICATION_PROVIDER_TEMPORARY',
+      errorCategory: 'PROVIDER_TEMPORARY',
+      message: expect.stringContaining('temporarily unavailable'),
+    })
 
     expect(prismaMock.signup_verification_challenges.create).toHaveBeenCalledTimes(1)
     expect(sendEmailMock).toHaveBeenCalledTimes(1)
@@ -343,6 +348,109 @@ describe('POST /api/auth/send-signup-verification', () => {
         token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
         used_at: null,
       },
+    })
+  })
+
+  it('returns stable rate-limited contract when provider reports throttling', async () => {
+    prismaMock.users.findUnique.mockResolvedValue({
+      email: 'player@example.com',
+      email_verified: false,
+      signup_tokens_credited: false,
+    })
+    prismaMock.signup_verification_challenges.create.mockResolvedValue({ id: 'challenge_1' })
+    prismaMock.signup_verification_challenges.deleteMany.mockResolvedValue({ count: 1 })
+    supabaseAuthMock.admin.generateLink.mockResolvedValue({
+      data: {
+        properties: {
+          action_link: 'https://example-project.supabase.co/auth/v1/verify?token=abc&type=magiclink',
+        },
+      },
+      error: null,
+    })
+    sendEmailMock.mockRejectedValue(new Error('Resend API rate limit exceeded (429)'))
+
+    const app = makeApp()
+    const res = await app.request('/api/auth/send-signup-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    expect(res.status).toBe(429)
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'Could not send verification email',
+      errorCode: 'SIGNUP_VERIFICATION_RATE_LIMITED',
+      errorCategory: 'RATE_LIMITED',
+      message: expect.stringContaining('rate limited'),
+    })
+    expect(prismaMock.signup_verification_challenges.deleteMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns stable disposable-domain contract when provider rejects disposable inboxes', async () => {
+    prismaMock.users.findUnique.mockResolvedValue({
+      email: 'player@example.com',
+      email_verified: false,
+      signup_tokens_credited: false,
+    })
+    prismaMock.signup_verification_challenges.create.mockResolvedValue({ id: 'challenge_1' })
+    prismaMock.signup_verification_challenges.deleteMany.mockResolvedValue({ count: 1 })
+    supabaseAuthMock.admin.generateLink.mockResolvedValue({
+      data: {
+        properties: {
+          action_link: 'https://example-project.supabase.co/auth/v1/verify?token=abc&type=magiclink',
+        },
+      },
+      error: null,
+    })
+    sendEmailMock.mockRejectedValue(
+      new Error('Verification blocked for disposable inbox domain: mailinator.com'),
+    )
+
+    const app = makeApp()
+    const res = await app.request('/api/auth/send-signup-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    expect(res.status).toBe(502)
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'Could not send verification email',
+      errorCode: 'SIGNUP_VERIFICATION_DISPOSABLE_DOMAIN',
+      errorCategory: 'DISPOSABLE_DOMAIN',
+      message: expect.stringContaining('not supported'),
+    })
+    expect(prismaMock.signup_verification_challenges.deleteMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns stable unknown contract for unclassified failures', async () => {
+    prismaMock.users.findUnique.mockResolvedValue({
+      email: 'player@example.com',
+      email_verified: false,
+      signup_tokens_credited: false,
+    })
+    prismaMock.signup_verification_challenges.create.mockResolvedValue({ id: 'challenge_1' })
+    prismaMock.signup_verification_challenges.deleteMany.mockResolvedValue({ count: 1 })
+    supabaseAuthMock.admin.generateLink.mockResolvedValue({
+      data: {
+        properties: {
+          action_link: 'https://example-project.supabase.co/auth/v1/verify?token=abc&type=magiclink',
+        },
+      },
+      error: null,
+    })
+    sendEmailMock.mockRejectedValue(new Error('totally-unmapped-provider-signal'))
+
+    const app = makeApp()
+    const res = await app.request('/api/auth/send-signup-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    expect(res.status).toBe(502)
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'Could not send verification email',
+      errorCode: 'SIGNUP_VERIFICATION_UNKNOWN',
+      errorCategory: 'UNKNOWN',
+      message: expect.stringContaining('right now'),
     })
   })
 })
