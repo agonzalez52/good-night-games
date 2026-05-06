@@ -175,8 +175,8 @@ export function parseCustomData(text: string): SurveyQuestion[] | null {
 }
 
 /**
- * Signed in: exact normalized match, else POST /api/survey-showdown/judge.
- * Signed out: exact normalized match only (no AI).
+ * Exact normalized match first; otherwise POST /api/survey-showdown/judge (AI).
+ * Optional session token is sent when present so judge_cache rows are scoped to the user.
  */
 export async function judgeAnswer(
   questionText: string,
@@ -189,7 +189,6 @@ export async function judgeAnswer(
   const exact = checkAnswerExact(input, answers, revealedIndices);
   if (exact !== null) return exact;
   const token = await getAccessToken();
-  if (!token) return null;
   const answerIds = answers.map(a => a.id?.trim()).filter(Boolean) as string[];
   if (answerIds.length !== answers.length) return null;
   return postJudge(token, questionText, input.trim(), answerIds, answers, revealedIndices);

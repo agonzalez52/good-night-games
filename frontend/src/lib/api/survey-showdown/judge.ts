@@ -29,7 +29,7 @@ interface JudgeResponse {
 
 /** POST /api/survey-showdown/judge — backend handles judge_cache and rate limits */
 export async function postJudge(
-  token: string,
+  token: string | null,
   questionText: string,
   input: string,
   answerIds: string[],
@@ -38,7 +38,10 @@ export async function postJudge(
 ): Promise<number | null> {
   const res = await fetch(`${BACKEND_URL}/api/survey-showdown/judge`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({
       questionText,
       input,

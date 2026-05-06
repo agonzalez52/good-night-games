@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
-import { requireAuth, AuthVariables } from '../../middleware/auth'
+import type { Prisma } from '@prisma/client'
+import { optionalAuth, OptionalAuthVariables } from '../../middleware/auth'
 import { rateLimit } from '../../middleware/rateLimit'
 import { prisma } from '../../lib/prisma'
 import { anthropic } from '../../lib/anthropic'
@@ -9,7 +10,7 @@ const GAME_ID = 'survey_showdown'
 const JUDGE_MAX_TOKENS = 96
 const MIN_MATCH_CONFIDENCE = 0.75
 
-const judge = new Hono<{ Variables: AuthVariables }>()
+const judge = new Hono<{ Variables: OptionalAuthVariables }>()
 
 interface JudgeModelResponse {
   match: boolean
@@ -74,13 +75,15 @@ function parseJudgeModelResponse(rawText: string): JudgeModelResponse | null {
 
 judge.post(
   '/',
-  requireAuth,
+  optionalAuth,
   rateLimit(60, 60 * 1000), // 60 requests per minute
   async (c) => {
     try {
       const body = await c.req.json()
       const parsed = judgeSchema.safeParse(body)
       if (!parsed.success) return c.json({ error: 'Invalid request' }, 400)
+
+      const cacheUserId = c.get('userId') ?? null
 
       const { input, questionText, answerIds, answers, revealedIndices } = parsed.data
       if (answerIds.length !== answers.length) {
@@ -103,6 +106,7 @@ judge.post(
         const cachedRows = await prisma.judge_cache.findMany({
           where: {
             game_id: GAME_ID,
+            user_id: cacheUserId,
             input_text: normalizedInput,
             survey_answer_id: { in: hiddenAnswerIds },
             is_match: true,
@@ -124,6 +128,7 @@ judge.post(
         const negativeCached = await prisma.judge_cache.count({
           where: {
             game_id: GAME_ID,
+            user_id: cacheUserId,
             input_text: normalizedInput,
             survey_answer_id: { in: hiddenAnswerIdsUnique },
             is_match: false,
@@ -203,14 +208,17 @@ Notes:
         const surveyAnswerId = answerIds[matchedIndex]!
         await prisma.judge_cache.upsert({
           where: {
-            game_id_input_text_survey_answer_id: {
+            // Prisma types omit null for optional compound keys; DB + NULLS NOT DISTINCT allow guest rows.
+            game_id_user_id_input_text_survey_answer_id: {
               game_id: GAME_ID,
+              user_id: cacheUserId,
               input_text: normalizedInput,
               survey_answer_id: surveyAnswerId,
-            },
+            } as unknown as Prisma.judge_cacheGame_idUser_idInput_textSurvey_answer_idCompoundUniqueInput,
           },
           create: {
             game_id: GAME_ID,
+            user_id: cacheUserId,
             input_text: normalizedInput,
             survey_answer_id: surveyAnswerId,
             matched_answer: matchedAnswer,
@@ -225,6 +233,7 @@ Notes:
         await prisma.judge_cache.createMany({
           data: hiddenAnswerIdsUnique.map((survey_answer_id) => ({
             game_id: GAME_ID,
+            user_id: cacheUserId,
             input_text: normalizedInput,
             survey_answer_id,
             matched_answer: null,

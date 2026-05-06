@@ -88,6 +88,8 @@ model referrals {
 model judge_cache {
   id               String   @id @default(uuid())
   game_id          String
+  /// Supabase `auth.users.id` when the judge request carried a valid session; null for guests.
+  user_id          String?
   /// Normalized player guess (lowercased trim).
   input_text       String
   /// Canonical slot: `su_survey_answers.id` (pack) or custom `ss:qa:*`.
@@ -97,7 +99,7 @@ model judge_cache {
   is_match         Boolean
   created_at       DateTime @default(now())
 
-  @@unique([game_id, input_text, survey_answer_id])
+  @@unique([game_id, user_id, input_text, survey_answer_id])
 }
 
 model feedback {
