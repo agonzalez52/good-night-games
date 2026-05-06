@@ -6,8 +6,17 @@ import { anthropic } from '../../lib/anthropic'
 import { judgeSchema } from '../../schemas/zod'
 
 const GAME_ID = 'survey_showdown'
+const JUDGE_MAX_TOKENS = 96
+const MIN_MATCH_CONFIDENCE = 0.75
 
 const judge = new Hono<{ Variables: AuthVariables }>()
+
+interface JudgeModelResponse {
+  match: boolean
+  index: number | null
+  confidence: number
+  matchType: string
+}
 
 function resolveCachedIndex(
   answers: { answer: string; points: number }[],
@@ -29,6 +38,40 @@ function resolveCachedIndex(
   return null
 }
 
+function parseJudgeModelResponse(rawText: string): JudgeModelResponse | null {
+  const tryParse = (text: string): JudgeModelResponse | null => {
+    try {
+      const parsed = JSON.parse(text) as Partial<JudgeModelResponse>
+      if (typeof parsed.match !== 'boolean') return null
+      if (typeof parsed.confidence !== 'number' || !Number.isFinite(parsed.confidence)) return null
+      if (parsed.confidence < 0 || parsed.confidence > 1) return null
+      if (typeof parsed.matchType !== 'string' || parsed.matchType.trim() === '') return null
+      if (
+        parsed.index !== null &&
+        parsed.index !== undefined &&
+        (!Number.isInteger(parsed.index) || parsed.index < 0)
+      ) {
+        return null
+      }
+      return {
+        match: parsed.match,
+        index: parsed.index ?? null,
+        confidence: parsed.confidence,
+        matchType: parsed.matchType,
+      }
+    } catch {
+      return null
+    }
+  }
+
+  const directParse = tryParse(rawText)
+  if (directParse) return directParse
+
+  const objectMatch = rawText.match(/\{[\s\S]*\}/)
+  if (!objectMatch) return null
+  return tryParse(objectMatch[0])
+}
+
 judge.post(
   '/',
   requireAuth,
@@ -39,7 +82,7 @@ judge.post(
       const parsed = judgeSchema.safeParse(body)
       if (!parsed.success) return c.json({ error: 'Invalid request' }, 400)
 
-      const { input, answerIds, answers, revealedIndices } = parsed.data
+      const { input, questionText, answerIds, answers, revealedIndices } = parsed.data
       if (answerIds.length !== answers.length) {
         return c.json({ error: 'answerIds must align with answers' }, 400)
       }
@@ -93,32 +136,57 @@ judge.post(
 
       const candidateList = candidates.map(({ i, text }) => `${i}: "${text}"`).join('\n')
 
-      const prompt = `You are judging a Survey Showdown game. The player answered: "${input}"
+      const prompt = `You are judging a survey game show where contestants try to match the most popular answers to questions. Judge strictly: only count answers that match the same core meaning as a board answer for the given question.
+
+The survey question is: "${questionText}"
+The player answered: "${input}"
 
 The survey answers still hidden on the board are (index: text):
 ${candidateList}
 
-Does the player's answer match any of these in meaning? Consider synonyms, common phrases, and reasonable equivalents.
+Allowed matches:
+- Close semantic equivalents where the player's meaning is clearly the same as one hidden answer to THIS question.
+- Common synonyms and brief paraphrases that preserve the same central idea.
+- Minor grammatical variation (plural/singular, tense) when intent stays the same.
 
-If more than one line is a reasonable match, pick any one of their indices—do not reply "none" just because several could fit.
+Disallowed matches:
+- Broad topical overlap that changes the main idea.
+- Weak associations, vibes, or "kind of related" connections.
+- Guesses that could loosely fit multiple answers but do not clearly match one.
 
-Reply with ONLY the number of the matching answer index from the list above, or "none" if there is no match. No explanation.`
+Decision rule:
+- If exactly one hidden answer is clearly the same core meaning, set match=true and return that index.
+- If no hidden answer is clearly the same core meaning, set match=false and index=null.
+
+Return ONLY valid JSON (no markdown, no explanation) with this exact shape:
+{"match": boolean, "index": number | null, "confidence": number, "matchType": string}
+
+Notes:
+- confidence must be between 0 and 1.
+- matchType should be one of: "exact", "synonym", "paraphrase", "none".
+- When match=false, always set index to null and matchType to "none".`
 
       const message = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 10,
+        max_tokens: JUDGE_MAX_TOKENS,
         messages: [{ role: 'user', content: prompt }],
       })
 
-      const reply = (message.content[0].type === 'text' ? message.content[0].text : '')
+      const replyText = message.content
+        .filter(block => block.type === 'text')
+        .map(block => block.text)
+        .join('\n')
         .trim()
-        .toLowerCase()
+      const modelResponse = parseJudgeModelResponse(replyText)
 
       let matchedIndex: number | null = null
-      if (reply !== 'none' && reply !== '') {
-        const parsedIdx = parseInt(reply, 10)
+      if (
+        modelResponse?.match === true &&
+        modelResponse.confidence >= MIN_MATCH_CONFIDENCE &&
+        modelResponse.index !== null
+      ) {
+        const parsedIdx = modelResponse.index
         if (
-          !Number.isNaN(parsedIdx) &&
           Number.isInteger(parsedIdx) &&
           parsedIdx >= 0 &&
           parsedIdx < answers.length &&

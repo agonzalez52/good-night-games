@@ -104,7 +104,7 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
     if (!answer.trim() || buzzed === null || judging) return
     clearInterval(tickRef.current!); setTimerActive(false)
     const submitted = answer; setAnswer(''); setJudging(true)
-    const idx = await judgeAnswer(submitted, currentQuestion.answers, [], getJudgeAccessToken)
+    const idx = await judgeAnswer(currentQuestion.question, submitted, currentQuestion.answers, [], getJudgeAccessToken)
     setJudging(false)
     if (idx !== null) { playReveal(); setResult({ correct: true, teamIndex: buzzed, answerIndex: idx }) }
     else { playBuzz(); setResult({ correct: false, teamIndex: buzzed, answerIndex: null }) }

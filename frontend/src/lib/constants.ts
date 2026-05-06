@@ -179,6 +179,7 @@ export function parseCustomData(text: string): SurveyQuestion[] | null {
  * Signed out: exact normalized match only (no AI).
  */
 export async function judgeAnswer(
+  questionText: string,
   input: string,
   answers: Answer[],
   revealedIndices: number[],
@@ -191,7 +192,7 @@ export async function judgeAnswer(
   if (!token) return null;
   const answerIds = answers.map(a => a.id?.trim()).filter(Boolean) as string[];
   if (answerIds.length !== answers.length) return null;
-  return postJudge(token, input.trim(), answerIds, answers, revealedIndices);
+  return postJudge(token, questionText, input.trim(), answerIds, answers, revealedIndices);
 }
 
 // ─── SOUNDS ───────────────────────────────────────────────────────────────────

@@ -96,7 +96,7 @@ export default function BoardScreen({ currentQuestion, teams, controllingTeam, f
     if (!answer.trim() || roundOver || judging) return
     const submitted = answer; setAnswer(''); setJudging(true)
     setMessage('⏳ Checking…'); setMessageType('good')
-    const idx = await judgeAnswer(submitted, currentQuestion.answers, revealed, getJudgeAccessToken)
+    const idx = await judgeAnswer(currentQuestion.question, submitted, currentQuestion.answers, revealed, getJudgeAccessToken)
     setJudging(false)
     if (idx !== null) {
       setHistory(h => [...h, snapshot(revealed, strikes, roundScore, stealing)])
@@ -117,7 +117,7 @@ export default function BoardScreen({ currentQuestion, teams, controllingTeam, f
   async function submitSteal() {
     if (!stealAnswer.trim() || judging) return
     const submitted = stealAnswer; setStealAnswer(''); setJudging(true)
-    const idx = await judgeAnswer(submitted, currentQuestion.answers, revealed, getJudgeAccessToken)
+    const idx = await judgeAnswer(currentQuestion.question, submitted, currentQuestion.answers, revealed, getJudgeAccessToken)
     setJudging(false)
     const stealTeam = active === 0 ? 1 : 0
     setShowAllAnswers(true); setRoundOver(true)

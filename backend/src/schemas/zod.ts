@@ -54,6 +54,7 @@ export const updateSurveyCollectionBodySchema = z.object({
 
 export const judgeSchema = z.object({
   input: z.string().min(1).max(200),
+  questionText: z.string().min(1).max(CUSTOM_SURVEY_QUESTION_MAX_LENGTH),
   /** Per-slot ids: DB `su_survey_answers.id` or custom deterministic QA hash; same order as `answers`. */
   answerIds: z.array(z.string().min(1).max(200)).min(1).max(16),
   /** Original board indices already revealed; model may only match hidden slots */
