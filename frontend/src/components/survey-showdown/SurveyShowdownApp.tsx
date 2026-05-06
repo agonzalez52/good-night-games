@@ -104,8 +104,8 @@ export default function SurveyShowdownApp() {
     customSurveysRef.current = customSurveys
   }, [customSurveys])
   const [customCollections, setCustomCollections] = useState<CustomCollection[]>([])
-  const [isTokenGame, setIsTokenGame] = useState(false)
   const [gameHistory, setGameHistory] = useState<GameHistoryRecord[]>([])
+  const showPlaythroughAds = !authLoading && !currentUser
 
   // When a user signs in, server history replaces the in-memory list. Guest-only rows are not uploaded.
   useEffect(() => {
@@ -471,7 +471,6 @@ export default function SurveyShowdownApp() {
         }
       }
       if (!usedTokens && !currentUser) { setFreeGamesPlayed(n => n + 1) }
-      setIsTokenGame(!!usedTokens)
       setTeams([{ name: t1, score: 0 }, { name: t2, score: 0 }])
       setTimerSecs(secs); setNumRounds(nr); setCurrentRound(0)
       setShuffledQuestions(shuffleArray(fullQuestions).slice(0, nr))
@@ -612,6 +611,7 @@ export default function SurveyShowdownApp() {
           roundNumber={currentRound + 1} totalRounds={numRounds}
           timerSecs={timerSecs} menuProps={menuProps}
           getJudgeAccessToken={getJudgeAccessToken} onSkip={handleSkipQuestion}
+          showPlaythroughAds={showPlaythroughAds}
         />
       )}
       {screen === 'board' && activeQuestions[currentRound] && (
@@ -621,7 +621,8 @@ export default function SurveyShowdownApp() {
           onRoundEnd={handleRoundEnd}
           roundNumber={currentRound + 1} totalRounds={numRounds} numRounds={numRounds}
           menuProps={menuProps} onNextRound={handleNextRound}
-          onNewGame={handleNewGame} getJudgeAccessToken={getJudgeAccessToken} isTokenGame={isTokenGame}
+          onNewGame={handleNewGame} getJudgeAccessToken={getJudgeAccessToken}
+          showPlaythroughAds={showPlaythroughAds}
         />
       )}
 

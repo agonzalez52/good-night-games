@@ -45,19 +45,10 @@ function XMark({ count }: { count: number }) {
   )
 }
 
-function BetweenRoundNext({ isTokenGame, onNextRound, roundNumber }: { isTokenGame: boolean; onNextRound: () => void; roundNumber: number }) {
-  const [countdown, setCountdown] = useState(isTokenGame ? 0 : 5)
-  const ready = isTokenGame || countdown <= 0
-
-  useEffect(() => {
-    if (isTokenGame) return
-    if (countdown <= 0) return
-    const t = setTimeout(() => setCountdown(c => c - 1), 1000)
-    return () => clearTimeout(t)
-  }, [countdown, isTokenGame])
+function BetweenRoundNext({ onNextRound, roundNumber }: { onNextRound: () => void; roundNumber: number }) {
   return (
-    <button onClick={ready ? onNextRound : undefined} disabled={!ready} style={{ padding: '13px 30px', borderRadius: 14, fontSize: 17, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.1em', background: ready ? 'linear-gradient(135deg,#F0A500,#C07A00)' : 'rgba(255,255,255,0.06)', color: ready ? '#fff' : 'var(--text-faint)', border: 'none', boxShadow: ready ? '0 4px 20px rgba(240,165,0,0.4)' : 'none', whiteSpace: 'nowrap', transition: 'all 0.3s ease', minWidth: 160 }}>
-      {ready ? `▶ Round ${roundNumber + 1}` : `▶ Round ${roundNumber + 1} (${countdown}s)`}
+    <button onClick={onNextRound} style={{ padding: '13px 30px', borderRadius: 14, fontSize: 17, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.1em', background: 'linear-gradient(135deg,#F0A500,#C07A00)', color: '#fff', border: 'none', boxShadow: '0 4px 20px rgba(240,165,0,0.4)', whiteSpace: 'nowrap', transition: 'all 0.3s ease', minWidth: 160 }}>
+      {`▶ Round ${roundNumber + 1}`}
     </button>
   )
 }
@@ -75,10 +66,10 @@ interface BoardScreenProps {
   onNextRound: () => void
   onNewGame: (finalTeams: Team[]) => void
   getJudgeAccessToken: () => Promise<string | null>
-  isTokenGame: boolean
+  showPlaythroughAds: boolean
 }
 
-export default function BoardScreen({ currentQuestion, teams, controllingTeam, faceOffAnswerIndex, onRoundEnd, roundNumber, totalRounds, numRounds, menuProps, onNextRound, onNewGame, getJudgeAccessToken, isTokenGame }: BoardScreenProps) {
+export default function BoardScreen({ currentQuestion, teams, controllingTeam, faceOffAnswerIndex, onRoundEnd, roundNumber, totalRounds, numRounds, menuProps, onNextRound, onNewGame, getJudgeAccessToken, showPlaythroughAds }: BoardScreenProps) {
   const [revealed, setRevealed] = useState<number[]>(faceOffAnswerIndex !== null ? [faceOffAnswerIndex] : [])
   const [strikes, setStrikes] = useState(0)
   const [animatingTile, setAnimatingTile] = useState<number | null>(null)
@@ -208,7 +199,7 @@ export default function BoardScreen({ currentQuestion, teams, controllingTeam, f
                   </div>
                 ))}
               </div>
-              {!isTokenGame && <AdBanner style={{ minHeight: 72, marginBottom: 16 }} />}
+              {showPlaythroughAds && <AdBanner placement="board-gameover" style={{ minHeight: 72, marginBottom: 16 }} />}
               <button onClick={() => onNewGame(roundResult.updatedTeams)} style={{ padding: '13px 38px', borderRadius: 14, fontSize: 18, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.1em', background: 'linear-gradient(135deg,#F0A500,#C07A00)', color: '#fff', border: 'none', boxShadow: '0 6px 28px rgba(240,165,0,0.4),inset 0 1px 0 rgba(255,255,255,0.2)' }}>↺ Back to Setup</button>
             </div>
           ) : (
@@ -220,9 +211,9 @@ export default function BoardScreen({ currentQuestion, teams, controllingTeam, f
                   <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(20px,2.8vw,30px)', color: '#F0A500', letterSpacing: '0.02em', animation: 'glow 2s infinite' }}>{teams[roundResult.winnerTeam].name}</div>
                   <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: '#0FD98A', letterSpacing: '0.08em' }}>+{roundResult.points} points</div>
                 </div>
-                <BetweenRoundNext isTokenGame={isTokenGame} onNextRound={onNextRound} roundNumber={roundNumber} />
+                <BetweenRoundNext onNextRound={onNextRound} roundNumber={roundNumber} />
               </div>
-              {!isTokenGame && <AdBanner style={{ minHeight: 72 }} />}
+              {showPlaythroughAds && <AdBanner placement="board-round" style={{ minHeight: 72 }} />}
             </div>
           )}
         </div>

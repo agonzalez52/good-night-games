@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import GameMenu from '@/components/survey-showdown/GameMenu'
+import { AdBanner } from '@/components/survey-showdown/AdBanner'
 import { judgeAnswer, playBuzzerIn, playReveal, playBuzz, playTick, playTimerExpire, SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH } from '@/lib/constants'
 import type { SurveyQuestion } from '@/lib/constants'
 
@@ -52,9 +53,10 @@ interface FaceOffScreenProps {
   menuProps: GameMenuProps
   getJudgeAccessToken: () => Promise<string | null>
   onSkip: () => void
+  showPlaythroughAds: boolean
 }
 
-export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, roundNumber, totalRounds, timerSecs, menuProps, getJudgeAccessToken, onSkip }: FaceOffScreenProps) {
+export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, roundNumber, totalRounds, timerSecs, menuProps, getJudgeAccessToken, onSkip, showPlaythroughAds }: FaceOffScreenProps) {
   const [buzzed, setBuzzed] = useState<number | null>(null)
   const [answer, setAnswer] = useState('')
   const [result, setResult] = useState<{ correct: boolean; teamIndex: number; answerIndex: number | null } | null>(null)
@@ -194,6 +196,8 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
           </div>
         </div>
       )}
+
+      {showPlaythroughAds && <div style={{ width: '100%', maxWidth: 560, position: 'relative', zIndex: 1 }}><AdBanner placement="faceoff" style={{ minHeight: 72 }} /></div>}
 
       {!buzzed && !result && <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '0.18em', color: 'var(--text-faint)', animation: 'pulse 2.2s infinite', textTransform: 'uppercase', position: 'relative', zIndex: 1 }}>● Waiting for buzz-in…</div>}
     </div>

@@ -352,7 +352,7 @@ export default function SetupScreen({
 
         {/* Ad banner */}
         <div style={{ marginTop: 24, width: 'min(540px,100%)', animation: 'slideUp 0.5s 0.44s ease-out both' }}>
-          <AdBanner style={{ minHeight: 80 }} />
+          <AdBanner placement="setup" style={{ minHeight: 80 }} />
         </div>
       </div>
 

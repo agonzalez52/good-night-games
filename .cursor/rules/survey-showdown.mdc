@@ -123,7 +123,7 @@ startGame(t1, t2, secs, nr)
 
 commitGame(t1, t2, secs, nr, usedTokens)
   ├── Deducts TOKENS_PER_GAME (2) if usedTokens === true
-  ├── Sets isTokenGame flag (suppresses ads for this game)
+  ├── Handles token spend side effects for premium sessions
   ├── Shuffles pack questions (playable question list for the session)
   └── setScreen("faceoff")
 ```
@@ -136,7 +136,8 @@ Always pass `usedTokens` as a boolean — never undefined.
 - `TOKENS_PER_GAME = 2`
 - Free packs (Classic) NEVER cost tokens, even for signed-in users
 - Premium packs and Random Mix cost 2 tokens
-- The `isTokenGame` flag suppresses ads between rounds and at game over
+- Playthrough ads on FaceOff and Board are shown only for signed-out users
+- Signed-in users do not see playthrough ads once auth is resolved
 - Token balance lives on `currentUser.tokenBalance` — always update via `onTokensUpdated`
 - Never mutate token balance directly in child components
 
