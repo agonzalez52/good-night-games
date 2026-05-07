@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import GameMenu from '@/components/survey-showdown/GameMenu'
 import { AdBanner } from '@/components/survey-showdown/AdBanner'
-import { judgeAnswer, playBuzz, playReveal, playTick } from '@/lib/constants'
+import { judgeAnswer, playBuzz, playReveal, SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH } from '@/lib/constants'
 import type { Answer, SurveyQuestion } from '@/lib/constants'
 
 interface Team { name: string; score: number }
@@ -45,18 +45,10 @@ function XMark({ count }: { count: number }) {
   )
 }
 
-function BetweenRoundNext({ isTokenGame, onNextRound, roundNumber }: { isTokenGame: boolean; onNextRound: () => void; roundNumber: number }) {
-  const [countdown, setCountdown] = useState(isTokenGame ? 0 : 5)
-  const [ready, setReady] = useState(isTokenGame)
-  useEffect(() => {
-    if (isTokenGame) return
-    if (countdown <= 0) { setReady(true); return }
-    const t = setTimeout(() => setCountdown(c => c - 1), 1000)
-    return () => clearTimeout(t)
-  }, [countdown, isTokenGame])
+function BetweenRoundNext({ onNextRound, roundNumber }: { onNextRound: () => void; roundNumber: number }) {
   return (
-    <button onClick={ready ? onNextRound : undefined} disabled={!ready} style={{ padding: '13px 30px', borderRadius: 14, fontSize: 17, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.1em', background: ready ? 'linear-gradient(135deg,#F0A500,#C07A00)' : 'rgba(255,255,255,0.06)', color: ready ? '#fff' : 'var(--text-faint)', border: 'none', boxShadow: ready ? '0 4px 20px rgba(240,165,0,0.4)' : 'none', whiteSpace: 'nowrap', transition: 'all 0.3s ease', minWidth: 160 }}>
-      {ready ? `▶ Round ${roundNumber + 1}` : `▶ Round ${roundNumber + 1} (${countdown}s)`}
+    <button onClick={onNextRound} style={{ padding: '13px 30px', borderRadius: 14, fontSize: 17, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.1em', background: 'linear-gradient(135deg,#F0A500,#C07A00)', color: '#fff', border: 'none', boxShadow: '0 4px 20px rgba(240,165,0,0.4)', whiteSpace: 'nowrap', transition: 'all 0.3s ease', minWidth: 160 }}>
+      {`▶ Round ${roundNumber + 1}`}
     </button>
   )
 }
@@ -74,10 +66,10 @@ interface BoardScreenProps {
   onNextRound: () => void
   onNewGame: (finalTeams: Team[]) => void
   getJudgeAccessToken: () => Promise<string | null>
-  isTokenGame: boolean
+  showPlaythroughAds: boolean
 }
 
-export default function BoardScreen({ currentQuestion, teams, controllingTeam, faceOffAnswerIndex, onRoundEnd, roundNumber, totalRounds, numRounds, menuProps, onNextRound, onNewGame, getJudgeAccessToken, isTokenGame }: BoardScreenProps) {
+export default function BoardScreen({ currentQuestion, teams, controllingTeam, faceOffAnswerIndex, onRoundEnd, roundNumber, totalRounds, numRounds, menuProps, onNextRound, onNewGame, getJudgeAccessToken, showPlaythroughAds }: BoardScreenProps) {
   const [revealed, setRevealed] = useState<number[]>(faceOffAnswerIndex !== null ? [faceOffAnswerIndex] : [])
   const [strikes, setStrikes] = useState(0)
   const [animatingTile, setAnimatingTile] = useState<number | null>(null)
@@ -104,7 +96,7 @@ export default function BoardScreen({ currentQuestion, teams, controllingTeam, f
     if (!answer.trim() || roundOver || judging) return
     const submitted = answer; setAnswer(''); setJudging(true)
     setMessage('⏳ Checking…'); setMessageType('good')
-    const idx = await judgeAnswer(submitted, currentQuestion.answers, revealed, getJudgeAccessToken)
+    const idx = await judgeAnswer(currentQuestion.question, submitted, currentQuestion.answers, revealed, getJudgeAccessToken)
     setJudging(false)
     if (idx !== null) {
       setHistory(h => [...h, snapshot(revealed, strikes, roundScore, stealing)])
@@ -125,7 +117,7 @@ export default function BoardScreen({ currentQuestion, teams, controllingTeam, f
   async function submitSteal() {
     if (!stealAnswer.trim() || judging) return
     const submitted = stealAnswer; setStealAnswer(''); setJudging(true)
-    const idx = await judgeAnswer(submitted, currentQuestion.answers, revealed, getJudgeAccessToken)
+    const idx = await judgeAnswer(currentQuestion.question, submitted, currentQuestion.answers, revealed, getJudgeAccessToken)
     setJudging(false)
     const stealTeam = active === 0 ? 1 : 0
     setShowAllAnswers(true); setRoundOver(true)
@@ -175,7 +167,7 @@ export default function BoardScreen({ currentQuestion, teams, controllingTeam, f
         <div style={{ background: 'rgba(155,109,255,0.08)', border: '1px solid rgba(155,109,255,0.3)', borderRadius: 14, padding: '14px 18px', textAlign: 'center', animation: 'slideUp 0.4s cubic-bezier(0.34,1.56,0.64,1)', position: 'relative', zIndex: 1, boxShadow: '0 4px 28px rgba(155,109,255,0.1)' }}>
           <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: '#9B6DFF', letterSpacing: '0.1em', marginBottom: 10, textTransform: 'uppercase' }}>⚡ Steal — {teams[active === 0 ? 1 : 0].name}</div>
           <div style={{ display: 'flex', gap: 9, justifyContent: 'center' }}>
-            <input ref={inputRef} value={stealAnswer} onChange={e => setStealAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitSteal()} placeholder="Enter steal answer…" disabled={judging} style={{ padding: '10px 14px', borderRadius: 11, fontSize: 16, fontFamily: 'var(--font-body)', fontWeight: 500, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(155,109,255,0.4)', color: 'var(--text)', width: 260, opacity: judging ? 0.55 : 1 }} />
+            <input ref={inputRef} value={stealAnswer} onChange={e => setStealAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitSteal()} placeholder="Enter steal answer…" disabled={judging} maxLength={SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH} style={{ padding: '10px 14px', borderRadius: 11, fontSize: 16, fontFamily: 'var(--font-body)', fontWeight: 500, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(155,109,255,0.4)', color: 'var(--text)', width: 260, opacity: judging ? 0.55 : 1 }} />
             <button onClick={submitSteal} disabled={judging} style={{ padding: '10px 20px', borderRadius: 11, fontSize: 15, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.08em', background: judging ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg,#9B6DFF,#6A3ACC)', color: judging ? 'var(--text-muted)' : '#fff', border: 'none', minWidth: 90, boxShadow: judging ? 'none' : '0 4px 18px rgba(155,109,255,0.3)' }}>{judging ? '⏳' : 'STEAL!'}</button>
           </div>
         </div>
@@ -184,7 +176,7 @@ export default function BoardScreen({ currentQuestion, teams, controllingTeam, f
       {!stealing && !roundOver && (
         <div style={{ display: 'flex', gap: 8, position: 'relative', zIndex: 1 }}>
           <div style={{ padding: '9px 14px', borderRadius: 11, fontSize: 12, fontFamily: 'var(--font-display)', fontWeight: 700, letterSpacing: '0.08em', color: '#F0A500', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.25)', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>{teams[active].name}</div>
-          <input ref={inputRef} value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitGuess()} placeholder="Type answer and press Enter…" disabled={judging} style={{ flex: 1, padding: '10px 14px', borderRadius: 11, fontSize: 16, fontFamily: 'var(--font-body)', fontWeight: 500, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text)', opacity: judging ? 0.55 : 1 }} />
+          <input ref={inputRef} value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitGuess()} placeholder="Type answer and press Enter…" disabled={judging} maxLength={SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH} style={{ flex: 1, padding: '10px 14px', borderRadius: 11, fontSize: 16, fontFamily: 'var(--font-body)', fontWeight: 500, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text)', opacity: judging ? 0.55 : 1 }} />
           <button onClick={submitGuess} disabled={judging} style={{ padding: '10px 18px', borderRadius: 11, fontSize: 14, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.08em', background: judging ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg,#F0A500,#C07A00)', color: judging ? 'var(--text-muted)' : '#fff', border: 'none', minWidth: 90, boxShadow: judging ? 'none' : '0 4px 16px rgba(240,165,0,0.3)' }}>{judging ? '⏳' : 'SUBMIT'}</button>
           <button onClick={redo} disabled={judging || history.length === 0} style={{ padding: '10px 12px', borderRadius: 11, fontSize: 11, fontFamily: 'var(--font-display)', fontWeight: 700, background: history.length > 0 && !judging ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.02)', color: history.length > 0 && !judging ? 'var(--text-muted)' : 'var(--text-faint)', border: '1px solid rgba(255,255,255,0.07)' }} title="Undo last guess">UNDO</button>
         </div>
@@ -198,7 +190,7 @@ export default function BoardScreen({ currentQuestion, teams, controllingTeam, f
               <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 10, letterSpacing: '0.22em', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' }}>Game Over</div>
               {gameWinner !== null ? (
                 <><div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(24px,4vw,44px)', color: '#F0A500', letterSpacing: '0.02em', animation: 'glow 2s infinite' }}>🏆 {roundResult.updatedTeams[gameWinner].name}</div><div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: 'var(--text-muted)', letterSpacing: '0.06em', marginBottom: 8 }}>Wins with {roundResult.updatedTeams[gameWinner].score} points!</div></>
-              ) : <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 34, color: '#F0A500', marginBottom: 8, animation: 'glow 2s infinite' }}>It's a Tie!</div>}
+              ) : <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 34, color: '#F0A500', marginBottom: 8, animation: 'glow 2s infinite' }}>It&apos;s a Tie!</div>}
               <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 18 }}>
                 {roundResult.updatedTeams.map((t, i) => (
                   <div key={i} style={{ padding: '12px 24px', borderRadius: 14, textAlign: 'center', background: i === gameWinner ? 'rgba(240,165,0,0.1)' : 'rgba(255,255,255,0.03)', border: i === gameWinner ? '1px solid rgba(240,165,0,0.45)' : '1px solid rgba(255,255,255,0.08)' }}>
@@ -207,7 +199,7 @@ export default function BoardScreen({ currentQuestion, teams, controllingTeam, f
                   </div>
                 ))}
               </div>
-              {!isTokenGame && <AdBanner style={{ minHeight: 72, marginBottom: 16 }} />}
+              {showPlaythroughAds && <AdBanner placement="board-gameover" style={{ minHeight: 72, marginBottom: 16 }} />}
               <button onClick={() => onNewGame(roundResult.updatedTeams)} style={{ padding: '13px 38px', borderRadius: 14, fontSize: 18, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.1em', background: 'linear-gradient(135deg,#F0A500,#C07A00)', color: '#fff', border: 'none', boxShadow: '0 6px 28px rgba(240,165,0,0.4),inset 0 1px 0 rgba(255,255,255,0.2)' }}>↺ Back to Setup</button>
             </div>
           ) : (
@@ -219,9 +211,9 @@ export default function BoardScreen({ currentQuestion, teams, controllingTeam, f
                   <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(20px,2.8vw,30px)', color: '#F0A500', letterSpacing: '0.02em', animation: 'glow 2s infinite' }}>{teams[roundResult.winnerTeam].name}</div>
                   <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: '#0FD98A', letterSpacing: '0.08em' }}>+{roundResult.points} points</div>
                 </div>
-                <BetweenRoundNext isTokenGame={isTokenGame} onNextRound={onNextRound} roundNumber={roundNumber} />
+                <BetweenRoundNext onNextRound={onNextRound} roundNumber={roundNumber} />
               </div>
-              {!isTokenGame && <AdBanner style={{ minHeight: 72 }} />}
+              {showPlaythroughAds && <AdBanner placement="board-round" style={{ minHeight: 72 }} />}
             </div>
           )}
         </div>

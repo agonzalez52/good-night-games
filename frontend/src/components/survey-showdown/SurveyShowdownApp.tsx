@@ -18,7 +18,19 @@ import {
   mergeSurveyPacksForGame,
   type GetPacksResponse,
 } from '@/lib/api/survey-showdown/survey-packs'
+import { getGameHistory, saveGameHistory } from '@/lib/api/survey-showdown/history'
 import { spendTokens } from '@/lib/api/tokens'
+import {
+  createCustomCollection,
+  createCustomSurvey,
+  deleteCustomCollection,
+  deleteCustomSurvey,
+  getCustomSurveys,
+  patchCustomSurveyCollection,
+  updateCustomCollection,
+  updateCustomSurvey,
+  type UpsertCustomSurveyInput,
+} from '@/lib/api/survey-showdown/custom-surveys'
 import {
   TOKENS_PER_GAME, resolvePackQuestions,
   shuffleArray, playCoinCollect,
@@ -44,7 +56,6 @@ export default function SurveyShowdownApp() {
     markEmailVerified,
     signOut,
     setAuthUser,
-    patchUser,
   } = useAuth()
 
   const router = useRouter()
@@ -68,10 +79,14 @@ export default function SurveyShowdownApp() {
   const [controllingTeam, setControllingTeam] = useState(0)
   const [faceOffAnswerIndex, setFaceOffAnswerIndex] = useState<number | null>(null)
   const [shuffledQuestions, setShuffledQuestions] = useState<SurveyQuestion[]>([])
-  const getJudgeAccessToken = useCallback(async () => {
+  const getSessionAccessToken = useCallback(async () => {
     const { data: { session } } = await createClient().auth.getSession()
     return session?.access_token ?? null
   }, [])
+  const getJudgeAccessToken = useCallback(
+    async () => getSessionAccessToken(),
+    [getSessionAccessToken]
+  )
 
   // Pack catalog (GET /api/survey-showdown/packs) + cached premium questions after auth fetch
   const [packs, setPacks] = useState<GetPacksResponse | null>(null)
@@ -84,9 +99,32 @@ export default function SurveyShowdownApp() {
   // Pack selection & custom surveys
   const [selectedPackId, setSelectedPackId] = useState('')
   const [customSurveys, setCustomSurveys] = useState<CustomSurvey[]>([])
+  const customSurveysRef = useRef<CustomSurvey[]>([])
+  useEffect(() => {
+    customSurveysRef.current = customSurveys
+  }, [customSurveys])
   const [customCollections, setCustomCollections] = useState<CustomCollection[]>([])
-  const [isTokenGame, setIsTokenGame] = useState(false)
   const [gameHistory, setGameHistory] = useState<GameHistoryRecord[]>([])
+  const showPlaythroughAds = !authLoading && !currentUser
+
+  // When a user signs in, server history replaces the in-memory list. Guest-only rows are not uploaded.
+  useEffect(() => {
+    if (authLoading || !currentUser) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const { data: { session } } = await createClient().auth.getSession()
+        const token = session?.access_token
+        if (!token || cancelled) return
+        const records = await getGameHistory(token)
+        if (!cancelled) setGameHistory(records)
+      } catch {
+        if (!cancelled) console.error('Failed to load game history')
+        // On failure, keep previous in-memory state to avoid clearing guest history or flicker.
+      }
+    })()
+    return () => { cancelled = true }
+  }, [currentUser, authLoading])
 
   // Token purchase & conversion flow
   const [showPurchaseModal, setShowPurchaseModal] = useState(false)
@@ -119,6 +157,29 @@ export default function SurveyShowdownApp() {
     if (!packs?.free?.length || selectedPackId) return
     setSelectedPackId(packs.free[0].id)
   }, [packs, selectedPackId])
+
+  useEffect(() => {
+    if (authLoading) return
+    if (!currentUser) {
+      setCustomSurveys([])
+      setCustomCollections([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const token = await getSessionAccessToken()
+        if (!token || cancelled) return
+        const data = await getCustomSurveys(token)
+        if (cancelled) return
+        setCustomSurveys(data.surveys)
+        setCustomCollections(data.collections)
+      } catch (error) {
+        if (!cancelled) console.error('Failed to load custom surveys', error)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [authLoading, currentUser, getSessionAccessToken])
 
   const mergedSurveyPacks = useMemo(
     () => mergeSurveyPacksForGame(packs?.free ?? [], packs?.premium ?? [], premiumQuestionsCache),
@@ -157,32 +218,162 @@ export default function SurveyShowdownApp() {
     markEmailVerified()
   }
 
-  // Phase 9: replace with real referral data from GET /api/referrals
-  function handleSimulateReferral() {
-    patchUser(u => {
-      const current = u.referralsClaimed || 0
-      if (current >= 3) return u
-      return { ...u, referralsClaimed: current + 1, tokenBalance: (u.tokenBalance || 0) + 2 }
-    })
+  function toUpsertSurveyPayload(survey: CustomSurvey): UpsertCustomSurveyInput {
+    return {
+      name: survey.name,
+      collectionId: survey.collectionId,
+      question: survey.question,
+      answers: survey.answers.map((answer) => ({
+        answer: answer.answer,
+        points: answer.points,
+      })),
+    }
   }
 
-  // Custom survey handlers — Phase 9: each maps to an API call
-  function handleSaveSurvey(survey: CustomSurvey) {
-    setCustomSurveys(prev => {
-      const exists = prev.find(s => s.id === survey.id)
-      return exists ? prev.map(s => s.id === survey.id ? survey : s) : [...prev, survey]
+  async function handleSaveSurvey(survey: CustomSurvey) {
+    const token = await getSessionAccessToken()
+    if (!token) {
+      console.error('Sign in required to save custom surveys.')
+      return
+    }
+    let snapshot: CustomSurvey[] = []
+    let isExisting = false
+    setCustomSurveys((prev) => {
+      snapshot = [...prev]
+      isExisting = prev.some((existing) => existing.id === survey.id)
+      if (isExisting) {
+        return prev.map((existing) => (existing.id === survey.id ? survey : existing))
+      }
+      return [...prev, survey]
     })
+    try {
+      const payload = toUpsertSurveyPayload(survey)
+      const savedSurvey = isExisting
+        ? await updateCustomSurvey(token, survey.id, payload)
+        : await createCustomSurvey(token, payload)
+      setCustomSurveys((prev) => {
+        const didExist = prev.some(
+          (existing) => existing.id === survey.id || existing.id === savedSurvey.id
+        )
+        if (!didExist) return [...prev, savedSurvey]
+        return prev.map((existing) => (
+          existing.id === survey.id || existing.id === savedSurvey.id ? savedSurvey : existing
+        ))
+      })
+    } catch (error) {
+      console.error('Failed to save custom survey', error)
+      setCustomSurveys(() => snapshot)
+    }
   }
-  function handleDeleteSurvey(id: string) { setCustomSurveys(prev => prev.filter(s => s.id !== id)) }
-  function handleSaveCollection(coll: CustomCollection) {
-    setCustomCollections(prev => {
-      const exists = prev.find(c => c.id === coll.id)
-      return exists ? prev.map(c => c.id === coll.id ? coll : c) : [...prev, coll]
+
+  async function handleMoveSurveyToCollection(surveyId: string, targetCollectionId: string | null) {
+    // Sync read before / after async token: awaiting would otherwise let another update commit, so
+    // the setState(optimistic) "no-op" branch can wrongly skip with a side-effect (shouldPatch) on
+    // a stale `prev` every other time when moves interleave.
+    const s0 = customSurveysRef.current.find((x) => x.id === surveyId)
+    if (!s0) return
+    if ((s0.collectionId ?? null) === (targetCollectionId ?? null)) return
+    const snapshot = [...customSurveysRef.current]
+
+    const token = await getSessionAccessToken()
+    if (!token) {
+      console.error('Sign in required to move custom surveys.')
+      return
+    }
+    // After the async gap, re-check so we do not re-apply an already-committed move.
+    const s1 = customSurveysRef.current.find((x) => x.id === surveyId)
+    if (!s1) return
+    if ((s1.collectionId ?? null) === (targetCollectionId ?? null)) return
+
+    setCustomSurveys((prev) =>
+      prev.map((x) => (x.id === surveyId ? { ...x, collectionId: targetCollectionId } : x))
+    )
+    try {
+      const saved = await patchCustomSurveyCollection(token, surveyId, targetCollectionId)
+      setCustomSurveys((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))
+    } catch (error) {
+      console.error('Failed to move custom survey', error)
+      setCustomSurveys(() => snapshot)
+    }
+  }
+
+  async function handleDeleteSurvey(id: string) {
+    const token = await getSessionAccessToken()
+    if (!token) {
+      console.error('Sign in required to delete custom surveys.')
+      return
+    }
+    let snapshot: CustomSurvey[] = []
+    setCustomSurveys((prev) => {
+      snapshot = [...prev]
+      return prev.filter((s) => s.id !== id)
     })
+    try {
+      await deleteCustomSurvey(token, id)
+    } catch (error) {
+      console.error('Failed to delete custom survey', error)
+      setCustomSurveys(() => snapshot)
+    }
   }
-  function handleDeleteCollection(id: string) {
-    setCustomCollections(prev => prev.filter(c => c.id !== id))
-    setCustomSurveys(prev => prev.map(s => s.collectionId === id ? { ...s, collectionId: null } : s))
+
+  async function handleSaveCollection(coll: CustomCollection) {
+    const token = await getSessionAccessToken()
+    if (!token) {
+      console.error('Sign in required to save custom collections.')
+      return
+    }
+    let snapshot: CustomCollection[] = []
+    let isExisting = false
+    setCustomCollections((prev) => {
+      snapshot = [...prev]
+      isExisting = prev.some((existing) => existing.id === coll.id)
+      if (isExisting) {
+        return prev.map((existing) => (existing.id === coll.id ? coll : existing))
+      }
+      return [...prev, coll]
+    })
+    try {
+      const savedCollection = isExisting
+        ? await updateCustomCollection(token, coll.id, { name: coll.name })
+        : await createCustomCollection(token, { name: coll.name })
+      setCustomCollections((prev) => {
+        const didExist = prev.some(
+          (existing) => existing.id === coll.id || existing.id === savedCollection.id
+        )
+        if (!didExist) return [...prev, savedCollection]
+        return prev.map((existing) => (
+          existing.id === coll.id || existing.id === savedCollection.id ? savedCollection : existing
+        ))
+      })
+    } catch (error) {
+      console.error('Failed to save custom collection', error)
+      setCustomCollections(() => snapshot)
+    }
+  }
+
+  async function handleDeleteCollection(id: string) {
+    const token = await getSessionAccessToken()
+    if (!token) {
+      console.error('Sign in required to delete custom collections.')
+      return
+    }
+    let collectionSnapshot: CustomCollection[] = []
+    let surveySnapshot: CustomSurvey[] = []
+    setCustomCollections((prev) => {
+      collectionSnapshot = [...prev]
+      return prev.filter(c => c.id !== id)
+    })
+    setCustomSurveys((prev) => {
+      surveySnapshot = [...prev]
+      return prev.map(s => s.collectionId === id ? { ...s, collectionId: null } : s)
+    })
+    try {
+      await deleteCustomCollection(token, id)
+    } catch (error) {
+      console.error('Failed to delete custom collection', error)
+      setCustomCollections(() => collectionSnapshot)
+      setCustomSurveys(() => surveySnapshot)
+    }
   }
 
   function handleSurveysModalClose() {
@@ -280,7 +471,6 @@ export default function SurveyShowdownApp() {
         }
       }
       if (!usedTokens && !currentUser) { setFreeGamesPlayed(n => n + 1) }
-      setIsTokenGame(!!usedTokens)
       setTeams([{ name: t1, score: 0 }, { name: t2, score: 0 }])
       setTimerSecs(secs); setNumRounds(nr); setCurrentRound(0)
       setShuffledQuestions(shuffleArray(fullQuestions).slice(0, nr))
@@ -332,20 +522,57 @@ export default function SurveyShowdownApp() {
     return 'Custom'
   }
 
-  // Phase 9: also call POST /api/survey-showdown/history with game_id: "survey_showdown" here
   function handleNewGame(finalTeams?: Team[]) {
     if (finalTeams) {
       const winner =
         finalTeams[0].score > finalTeams[1].score ? finalTeams[0].name :
         finalTeams[1].score > finalTeams[0].score ? finalTeams[1].name : 'Tie'
-      const record: GameHistoryRecord = {
-        id: Date.now(),
-        timestamp: new Date(),
-        team1: finalTeams[0].name, team2: finalTeams[1].name,
-        rounds: numRounds, pack: getPackName(selectedPackId),
-        winner, score1: finalTeams[0].score, score2: finalTeams[1].score,
+      const pack = getPackName(selectedPackId)
+      const t1 = finalTeams[0].name
+      const t2 = finalTeams[1].name
+      const s1 = finalTeams[0].score
+      const s2 = finalTeams[1].score
+      if (!currentUser) {
+        const record: GameHistoryRecord = {
+          id: Date.now(),
+          timestamp: new Date(),
+          team1: t1, team2: t2,
+          rounds: numRounds, pack,
+          winner, score1: s1, score2: s2,
+        }
+        setGameHistory(prev => [record, ...prev].slice(0, 50))
+      } else {
+        // Save in the background so setup is never blocked by the network; on failure we add no row.
+        void (async () => {
+          const { data: { session } } = await createClient().auth.getSession()
+          const token = session?.access_token
+          if (!token) {
+            console.error('Sign in required to save game history.')
+            return
+          }
+          try {
+            const res = await saveGameHistory(token, {
+              team1: t1,
+              team2: t2,
+              rounds: numRounds,
+              pack,
+              winner,
+              score1: s1,
+              score2: s2,
+            })
+            const record: GameHistoryRecord = {
+              id: res.session.id,
+              timestamp: new Date(res.session.timestamp),
+              team1: t1, team2: t2,
+              rounds: numRounds, pack,
+              winner, score1: s1, score2: s2,
+            }
+            setGameHistory(prev => [record, ...prev].slice(0, 50))
+          } catch (e) {
+            console.error('Failed to save game history', e)
+          }
+        })()
       }
-      setGameHistory(prev => [record, ...prev].slice(0, 50))
     }
     setScreen('setup')
     if (!currentUser && freeGamesPlayed === 1) {
@@ -371,9 +598,9 @@ export default function SurveyShowdownApp() {
           selectedPackId={selectedPackId} onSelectPack={setSelectedPackId}
           customSurveys={customSurveys} customCollections={customCollections}
           onSaveSurvey={handleSaveSurvey} onDeleteSurvey={handleDeleteSurvey}
+          onMoveSurveyToCollection={handleMoveSurveyToCollection}
           onSaveCollection={handleSaveCollection} onDeleteCollection={handleDeleteCollection}
           onCloseSurveys={handleSurveysModalClose}
-          onSimulateReferral={handleSimulateReferral}
           gameHistory={gameHistory}
         />
       )}
@@ -384,6 +611,7 @@ export default function SurveyShowdownApp() {
           roundNumber={currentRound + 1} totalRounds={numRounds}
           timerSecs={timerSecs} menuProps={menuProps}
           getJudgeAccessToken={getJudgeAccessToken} onSkip={handleSkipQuestion}
+          showPlaythroughAds={showPlaythroughAds}
         />
       )}
       {screen === 'board' && activeQuestions[currentRound] && (
@@ -393,7 +621,8 @@ export default function SurveyShowdownApp() {
           onRoundEnd={handleRoundEnd}
           roundNumber={currentRound + 1} totalRounds={numRounds} numRounds={numRounds}
           menuProps={menuProps} onNextRound={handleNextRound}
-          onNewGame={handleNewGame} getJudgeAccessToken={getJudgeAccessToken} isTokenGame={isTokenGame}
+          onNewGame={handleNewGame} getJudgeAccessToken={getJudgeAccessToken}
+          showPlaythroughAds={showPlaythroughAds}
         />
       )}
 

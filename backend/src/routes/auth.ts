@@ -1,105 +1,422 @@
 import { Hono } from 'hono'
-import { Prisma } from '@prisma/client'
+import { Prisma, ReferralStatus } from '@prisma/client'
+import { createHash, randomBytes } from 'node:crypto'
 import { requireAuth, AuthVariables } from '../middleware/auth'
 import { prisma } from '../lib/prisma'
+import { sendEmail } from '../lib/email'
 import { supabaseAdmin } from '../lib/supabase'
-import { signupProviderHintSchema } from '../schemas/zod'
+import { confirmSignupVerificationSchema, signupProviderHintSchema } from '../schemas/zod'
 
 const FREE_SIGNUP_TOKENS = 4
 /** Not a Stripe id — purchase row for analytics; one row per user via atomic claim below. */
 const SIGNUP_BONUS_BUNDLE_ID = 'email_verification_bonus'
+const SIGNUP_VERIFY_NEXT_PATH = '/survey-showdown'
+const SIGNUP_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000
+const SIGNUP_VERIFICATION_EMAIL_TEMPLATE_ID = '6cedbceb-8deb-416b-aa85-6c537d5e0696'
+const SIGNUP_VERIFICATION_APP_NAME = 'Survey Showdown'
+const SIGNUP_VERIFICATION_TOKEN_COUNT = '4'
+const SIGNUP_VERIFICATION_SEND_ERROR = 'Could not send verification email'
+
+const SIGNUP_VERIFICATION_FAILURE_CATEGORIES = {
+  DISPOSABLE_DOMAIN: 'DISPOSABLE_DOMAIN',
+  RATE_LIMITED: 'RATE_LIMITED',
+  PROVIDER_TEMPORARY: 'PROVIDER_TEMPORARY',
+  UNKNOWN: 'UNKNOWN',
+} as const
+
+type SignupVerificationFailureCategory =
+  (typeof SIGNUP_VERIFICATION_FAILURE_CATEGORIES)[keyof typeof SIGNUP_VERIFICATION_FAILURE_CATEGORIES]
+
+interface SignupVerificationFailureContract {
+  status: 429 | 502
+  errorCode: string
+  errorCategory: SignupVerificationFailureCategory
+  message: string
+}
+
+const SIGNUP_VERIFICATION_FAILURE_RESPONSE_BY_CATEGORY: Record<
+  SignupVerificationFailureCategory,
+  SignupVerificationFailureContract
+> = {
+  DISPOSABLE_DOMAIN: {
+    status: 502,
+    errorCode: 'SIGNUP_VERIFICATION_DISPOSABLE_DOMAIN',
+    errorCategory: 'DISPOSABLE_DOMAIN',
+    message:
+      'This email provider is not supported for signup verification. Please use a different email address.',
+  },
+  RATE_LIMITED: {
+    status: 429,
+    errorCode: 'SIGNUP_VERIFICATION_RATE_LIMITED',
+    errorCategory: 'RATE_LIMITED',
+    message: 'Verification email sending is temporarily rate limited. Please try again in about a minute.',
+  },
+  PROVIDER_TEMPORARY: {
+    status: 502,
+    errorCode: 'SIGNUP_VERIFICATION_PROVIDER_TEMPORARY',
+    errorCategory: 'PROVIDER_TEMPORARY',
+    message: 'Email service is temporarily unavailable. Please try again shortly.',
+  },
+  UNKNOWN: {
+    status: 502,
+    errorCode: 'SIGNUP_VERIFICATION_UNKNOWN',
+    errorCategory: 'UNKNOWN',
+    message: 'Could not send verification email right now. Please try again.',
+  },
+}
 
 const auth = new Hono<{ Variables: AuthVariables }>()
 
+async function getUserTokenBalance(userId: string): Promise<number> {
+  const tokenRecord = await prisma.user_tokens.findUnique({ where: { user_id: userId } })
+  return tokenRecord?.balance ?? 0
+}
+
+function getFrontendBaseUrl(): string {
+  const configured = process.env.FRONTEND_URL?.trim()
+  return configured && configured.length > 0 ? configured : 'http://localhost:3000'
+}
+
+function createSignupChallengeToken(): string {
+  return randomBytes(32).toString('base64url')
+}
+
+function hashSignupChallenge(challenge: string): string {
+  return createHash('sha256').update(challenge).digest('hex')
+}
+
+function classifySignupVerificationSendFailure(error: unknown): SignupVerificationFailureContract {
+  const fallback = SIGNUP_VERIFICATION_FAILURE_RESPONSE_BY_CATEGORY.UNKNOWN
+  const errorMessage = error instanceof Error ? error.message : String(error)
+  const normalizedMessage = errorMessage.trim().toLowerCase()
+
+  if (normalizedMessage.length === 0) return fallback
+
+  const hasDisposableSignal =
+    normalizedMessage.includes('disposable') ||
+    normalizedMessage.includes('temporary inbox') ||
+    normalizedMessage.includes('mailinator') ||
+    normalizedMessage.includes('10minutemail') ||
+    normalizedMessage.includes('guerrillamail')
+  if (hasDisposableSignal) {
+    return SIGNUP_VERIFICATION_FAILURE_RESPONSE_BY_CATEGORY.DISPOSABLE_DOMAIN
+  }
+
+  const hasRateLimitSignal =
+    normalizedMessage.includes('rate limit') ||
+    normalizedMessage.includes('rate-limit') ||
+    normalizedMessage.includes('too many requests') ||
+    normalizedMessage.includes('throttl') ||
+    normalizedMessage.includes('quota exceeded') ||
+    normalizedMessage.includes('429')
+  if (hasRateLimitSignal) {
+    return SIGNUP_VERIFICATION_FAILURE_RESPONSE_BY_CATEGORY.RATE_LIMITED
+  }
+
+  const hasProviderTemporarySignal =
+    normalizedMessage.includes('temporar') ||
+    normalizedMessage.includes('provider unavailable') ||
+    normalizedMessage.includes('service unavailable') ||
+    normalizedMessage.includes('unavailable') ||
+    normalizedMessage.includes('timeout') ||
+    normalizedMessage.includes('timed out') ||
+    normalizedMessage.includes('try again later') ||
+    normalizedMessage.includes('connection reset') ||
+    normalizedMessage.includes('econnreset') ||
+    normalizedMessage.includes('socket hang up')
+  if (hasProviderTemporarySignal) {
+    return SIGNUP_VERIFICATION_FAILURE_RESPONSE_BY_CATEGORY.PROVIDER_TEMPORARY
+  }
+
+  return fallback
+}
+
+function buildSignupVerificationRedirect(challenge: string): string {
+  const callbackUrl = new URL('/auth/callback', getFrontendBaseUrl())
+  callbackUrl.searchParams.set('next', SIGNUP_VERIFY_NEXT_PATH)
+  callbackUrl.searchParams.set('verify_signup', '1')
+  callbackUrl.searchParams.set('challenge', challenge)
+  return callbackUrl.toString()
+}
+
+async function createSignupVerificationMagicLink(email: string, challenge: string): Promise<string> {
+  const redirectTo = buildSignupVerificationRedirect(challenge)
+  const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+    type: 'magiclink',
+    email,
+    options: { redirectTo },
+  })
+
+  if (error) {
+    throw new Error(`Could not generate signup verification magic link: ${error.message}`)
+  }
+
+  const actionLink = data.properties?.action_link?.trim()
+  if (!actionLink) {
+    throw new Error('Could not generate signup verification magic link: missing action link')
+  }
+
+  return actionLink
+}
+
+async function claimSignupVerificationBonus(
+  tx: Prisma.TransactionClient,
+  userId: string
+): Promise<{ credited: boolean; balance: number }> {
+  await tx.users.updateMany({
+    where: { id: userId, email_verified: false },
+    data: { email_verified: true },
+  })
+
+  const claimed = await tx.users.updateMany({
+    where: { id: userId, signup_tokens_credited: false },
+    data: { signup_tokens_credited: true },
+  })
+
+  if (claimed.count === 0) {
+    const tokenRecord = await tx.user_tokens.findUnique({ where: { user_id: userId } })
+    return { credited: false, balance: tokenRecord?.balance ?? 0 }
+  }
+
+  const updated = await tx.user_tokens.upsert({
+    where: { user_id: userId },
+    update: {
+      balance: { increment: FREE_SIGNUP_TOKENS },
+      lifetime_purchased: { increment: FREE_SIGNUP_TOKENS },
+    },
+    create: {
+      user_id: userId,
+      balance: FREE_SIGNUP_TOKENS,
+      lifetime_purchased: FREE_SIGNUP_TOKENS,
+      lifetime_spent: 0,
+    },
+  })
+
+  await tx.purchases.create({
+    data: {
+      user_id: userId,
+      stripe_checkout_session_id: `email_verification:${userId}`,
+      stripe_payment_intent_id: null,
+      bundle_id: SIGNUP_BONUS_BUNDLE_ID,
+      tokens_purchased: FREE_SIGNUP_TOKENS,
+      amount_paid_cents: 0,
+      status: 'COMPLETED'
+    },
+  })
+
+  return { credited: true, balance: updated.balance }
+}
+
 // POST /api/auth/verify-email
-// Syncs public.users.email_verified from Supabase; credits 4 free tokens once after verify.
-// Idempotent: safe to call multiple times.
+// Deprecated compatibility route for legacy callers.
 auth.post('/verify-email', requireAuth, async (c) => {
   const userId = c.get('userId')
-  const authHeader = c.req.header('Authorization')
-  const jwt = authHeader?.replace(/^Bearer\s+/i, '') ?? ''
-
-  const { data: { user: authUser }, error: authErr } = await supabaseAdmin.auth.getUser(jwt)
-  if (authErr || !authUser) return c.json({ error: 'Unauthorized' }, 401)
-
-  const supabaseEmailVerified = Boolean(authUser.email_confirmed_at)
 
   try {
-    const user = await prisma.users.findUnique({ where: { id: userId } })
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: {
+        email_verified: true,
+        signup_tokens_credited: true,
+      },
+    })
 
     if (!user) return c.json({ error: 'User not found' }, 404)
 
-    if (supabaseEmailVerified && !user.email_verified) {
-      await prisma.users.update({
-        where: { id: userId },
-        data: { email_verified: true },
-      })
-    }
-
-    if (!supabaseEmailVerified) {
-      const tokenRecord = await prisma.user_tokens.findUnique({ where: { user_id: userId } })
-      return c.json({
-        balance: tokenRecord?.balance ?? 0,
-        alreadyCredited: user.signup_tokens_credited,
-        email_verified: user.email_verified,
-      })
-    }
-
-    // Already credited — idempotent, return current balance
-    if (user.signup_tokens_credited) {
-      const tokenRecord = await prisma.user_tokens.findUnique({ where: { user_id: userId } })
-      return c.json({
-        balance: tokenRecord?.balance ?? 0,
-        alreadyCredited: true,
-        email_verified: true,
-      })
-    }
-
-    // Claim signup bonus exactly once: concurrent verify-email calls (e.g. INITIAL_SESSION +
-    // SIGNED_IN + USER_UPDATED) must not each increment — only the first updateMany wins.
-    const result = await prisma.$transaction(async (tx) => {
-      const claimed = await tx.users.updateMany({
-        where: { id: userId, signup_tokens_credited: false },
-        data: { signup_tokens_credited: true, email_verified: true },
-      })
-      if (claimed.count === 0) {
-        const tokenRecord = await tx.user_tokens.findUnique({ where: { user_id: userId } })
-        return { credited: false as const, balance: tokenRecord?.balance ?? 0 }
-      }
-      const updated = await tx.user_tokens.upsert({
-        where: { user_id: userId },
-        update: {
-          balance: { increment: FREE_SIGNUP_TOKENS },
-          lifetime_purchased: { increment: FREE_SIGNUP_TOKENS },
-        },
-        create: {
-          user_id: userId,
-          balance: FREE_SIGNUP_TOKENS,
-          lifetime_purchased: FREE_SIGNUP_TOKENS,
-          lifetime_spent: 0,
-        },
-      })
-      await tx.purchases.create({
-        data: {
-          user_id: userId,
-          stripe_checkout_session_id: `email_verification:${userId}`,
-          stripe_payment_intent_id: null,
-          bundle_id: SIGNUP_BONUS_BUNDLE_ID,
-          tokens_purchased: FREE_SIGNUP_TOKENS,
-          amount_paid_cents: 0,
-          status: 'COMPLETED'
-        },
-      })
-      return { credited: true as const, balance: updated.balance }
-    })
+    const balance = await getUserTokenBalance(userId)
 
     return c.json({
-      balance: result.balance,
-      alreadyCredited: !result.credited,
-      email_verified: true,
+      balance,
+      alreadyCredited: user.signup_tokens_credited,
+      email_verified: user.email_verified,
+      deprecated: true,
     })
   } catch (error) {
     console.error('POST /api/auth/verify-email error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// POST /api/auth/send-signup-verification
+// Creates a one-time challenge and dispatches verification email to authenticated user.
+auth.post('/send-signup-verification', requireAuth, async (c) => {
+  const userId = c.get('userId')
+
+  try {
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: {
+        email: true,
+        email_verified: true,
+        signup_tokens_credited: true,
+      },
+    })
+    if (!user) return c.json({ error: 'User not found' }, 404)
+
+    if (user.email_verified && user.signup_tokens_credited) {
+      const balance = await getUserTokenBalance(userId)
+      return c.json({
+        success: true,
+        sent: false,
+        alreadyVerified: true,
+        alreadyCredited: true,
+        balance,
+      })
+    }
+
+    const challenge = createSignupChallengeToken()
+    const tokenHash = hashSignupChallenge(challenge)
+    const expiresAt = new Date(Date.now() + SIGNUP_VERIFICATION_TTL_MS)
+
+    await prisma.signup_verification_challenges.create({
+      data: {
+        user_id: userId,
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+      },
+    })
+
+    let verificationUrl = ''
+    try {
+      verificationUrl = await createSignupVerificationMagicLink(user.email, challenge)
+      await sendEmail({
+        to: user.email,
+        templateId: SIGNUP_VERIFICATION_EMAIL_TEMPLATE_ID,
+        variables: {
+          APP_NAME: SIGNUP_VERIFICATION_APP_NAME,
+          TOKEN_COUNT: SIGNUP_VERIFICATION_TOKEN_COUNT,
+          VERIFY_URL: verificationUrl,
+        },
+      })
+    } catch (sendError) {
+      await prisma.signup_verification_challenges.deleteMany({
+        where: { user_id: userId, token_hash: tokenHash, used_at: null },
+      })
+      const classifiedFailure = classifySignupVerificationSendFailure(sendError)
+      console.error('POST /api/auth/send-signup-verification send error:', {
+        classifiedFailure,
+        sendError,
+      })
+      return c.json(
+        {
+          error: SIGNUP_VERIFICATION_SEND_ERROR,
+          errorCode: classifiedFailure.errorCode,
+          errorCategory: classifiedFailure.errorCategory,
+          message: classifiedFailure.message,
+        },
+        classifiedFailure.status
+      )
+    }
+
+    return c.json({
+      success: true,
+      sent: true,
+      alreadyVerified: user.email_verified,
+      alreadyCredited: user.signup_tokens_credited,
+      expiresAt: expiresAt.toISOString(),
+    })
+  } catch (error) {
+    console.error('POST /api/auth/send-signup-verification error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// POST /api/auth/confirm-signup-verification
+// Validates one-time challenge and credits signup tokens exactly once.
+auth.post('/confirm-signup-verification', requireAuth, async (c) => {
+  const userId = c.get('userId')
+
+  try {
+    const body = await c.req.json()
+    const parsed = confirmSignupVerificationSchema.safeParse(body)
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400)
+    }
+
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    })
+    if (!user) return c.json({ error: 'User not found' }, 404)
+
+    const now = new Date()
+    const tokenHash = hashSignupChallenge(parsed.data.challenge.trim())
+    const result = await prisma.$transaction(async (tx) => {
+      const challenge = await tx.signup_verification_challenges.findFirst({
+        where: {
+          user_id: userId,
+          token_hash: tokenHash,
+        },
+      })
+
+      if (!challenge) return { status: 'invalid' as const }
+      if (challenge.expires_at <= now) return { status: 'expired' as const }
+
+      if (challenge.used_at) {
+        const [profile, tokenRecord] = await Promise.all([
+          tx.users.findUnique({
+            where: { id: userId },
+            select: { email_verified: true, signup_tokens_credited: true },
+          }),
+          tx.user_tokens.findUnique({ where: { user_id: userId } }),
+        ])
+        return {
+          status: 'already-used' as const,
+          balance: tokenRecord?.balance ?? 0,
+          alreadyCredited: profile?.signup_tokens_credited ?? false,
+          emailVerified: profile?.email_verified ?? false,
+        }
+      }
+
+      const markedUsed = await tx.signup_verification_challenges.updateMany({
+        where: {
+          id: challenge.id,
+          user_id: userId,
+          used_at: null,
+          expires_at: { gt: now },
+        },
+        data: { used_at: now },
+      })
+
+      if (markedUsed.count === 0) {
+        const tokenRecord = await tx.user_tokens.findUnique({ where: { user_id: userId } })
+        const profile = await tx.users.findUnique({
+          where: { id: userId },
+          select: { email_verified: true, signup_tokens_credited: true },
+        })
+        return {
+          status: 'already-used' as const,
+          balance: tokenRecord?.balance ?? 0,
+          alreadyCredited: profile?.signup_tokens_credited ?? false,
+          emailVerified: profile?.email_verified ?? false,
+        }
+      }
+
+      const bonus = await claimSignupVerificationBonus(tx, userId)
+      return {
+        status: 'confirmed' as const,
+        balance: bonus.balance,
+        alreadyCredited: !bonus.credited,
+        emailVerified: true,
+      }
+    })
+
+    if (result.status === 'invalid') {
+      return c.json({ error: 'Invalid verification challenge' }, 400)
+    }
+    if (result.status === 'expired') {
+      return c.json({ error: 'Verification challenge expired' }, 400)
+    }
+
+    return c.json({
+      success: true,
+      verified: true,
+      alreadyCredited: result.alreadyCredited,
+      email_verified: result.emailVerified,
+      balance: result.balance,
+    })
+  } catch (error) {
+    console.error('POST /api/auth/confirm-signup-verification error:', error)
     return c.json({ error: 'Internal server error' }, 500)
   }
 })
@@ -123,7 +440,7 @@ auth.get('/me', requireAuth, async (c) => {
   
   // Count claimed referrals for this user
   const referralsClaimed = await prisma.referrals.count({
-    where: { referrer_id: userId, status: 'claimed' }
+    where: { referrer_id: userId, status: ReferralStatus.CLAIMED },
   })
   
   return c.json({
@@ -174,6 +491,15 @@ function appMetaIndicatesGoogle(meta: unknown): boolean {
   if (m.provider === 'google') return true
   const providers = m.providers
   return Array.isArray(providers) && providers.some(p => p === 'google')
+}
+
+function supabaseUserIndicatesGoogle(user: {
+  app_metadata?: unknown
+  identities?: Array<{ provider?: string | null }> | null
+}): boolean {
+  if (appMetaIndicatesGoogle(user.app_metadata)) return true
+  if (!Array.isArray(user.identities)) return false
+  return user.identities.some(identity => identity?.provider === 'google')
 }
 
 /** True if this email already has a Google-linked auth user (signUp often omits identities in the JSON response). */
@@ -265,6 +591,45 @@ auth.post('/signup-provider-hint', async (c) => {
     return c.json({ has_google_provider: hasGoogleProvider })
   } catch (error) {
     console.error('POST /api/auth/signup-provider-hint error:', error)
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// POST /api/auth/confirm-oauth-signup
+// Confirms Google OAuth signup and grants one-time signup bonus idempotently.
+auth.post('/confirm-oauth-signup', requireAuth, async (c) => {
+  const userId = c.get('userId')
+
+  try {
+    const authHeader = c.req.header('Authorization')
+    const jwt = authHeader?.replace(/^Bearer\s+/i, '')?.trim() ?? ''
+    if (!jwt) return c.json({ error: 'Unauthorized' }, 401)
+
+    const { data: { user: authUser }, error: authError } = await supabaseAdmin.auth.getUser(jwt)
+    if (authError || !authUser || authUser.id !== userId) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+    if (!supabaseUserIndicatesGoogle(authUser)) {
+      return c.json({ error: 'OAuth provider is not Google' }, 403)
+    }
+
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    })
+    if (!user) return c.json({ error: 'User not found' }, 404)
+
+    const bonus = await prisma.$transaction((tx) => claimSignupVerificationBonus(tx, userId))
+
+    return c.json({
+      success: true,
+      verified: true,
+      alreadyCredited: !bonus.credited,
+      email_verified: true,
+      balance: bonus.balance,
+    })
+  } catch (error) {
+    console.error('POST /api/auth/confirm-oauth-signup error:', error)
     return c.json({ error: 'Internal server error' }, 500)
   }
 })

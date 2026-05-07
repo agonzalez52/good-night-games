@@ -2,6 +2,14 @@ import type { SurveyPack, SurveyQuestion } from '@/lib/constants'
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
 
+/** Tag row from GET /api/survey-showdown/packs; API only returns non-expired tags (`expires_at` is ISO or null). */
+export interface SurveyPackTag {
+  id: string
+  label: string
+  color: string | null
+  expires_at: string | null
+}
+
 /** Shared fields on survey pack rows from GET /api/survey-showdown/packs (`created_at` is an ISO string over JSON). */
 export type SurveyPackApiBase = {
   id: string
@@ -10,6 +18,7 @@ export type SurveyPackApiBase = {
   is_free: boolean
   is_active: boolean
   created_at: string
+  tags: SurveyPackTag[]
 }
 
 /** Free packs in the list response include inline questions (same shape as `SurveyQuestion` in app code). */
@@ -25,11 +34,33 @@ export type GetPacksResponse = {
 
 export type GetPackQuestionsResponse = { questions: SurveyQuestion[] }
 
-/** GET /api/survey-showdown/packs — public; premium entries have no `questions` in the list. */
+/** Public catalog; safe to reuse briefly to avoid duplicate requests (Strict Mode + remounts). */
+const PACKS_CACHE_TTL_MS = 120_000
+
+let packsCache: { expiresAt: number; data: GetPacksResponse } | null = null
+let packsInflight: Promise<GetPacksResponse> | null = null
+
+/** GET /api/survey-showdown/packs — public; premium entries have no `questions` in the list (deduped in-flight + short memory cache). */
 export async function getPacks(): Promise<GetPacksResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/survey-showdown/packs`)
-  if (!res.ok) throw new Error('Failed to fetch packs')
-  return (await res.json()) as GetPacksResponse
+  const now = Date.now()
+  if (packsCache && packsCache.expiresAt > now)
+    return packsCache.data
+  if (packsInflight) return packsInflight
+
+  packsInflight = (async () => {
+    const res = await fetch(`${BACKEND_URL}/api/survey-showdown/packs`)
+    if (!res.ok) throw new Error('Failed to fetch packs')
+    return (await res.json()) as GetPacksResponse
+  })()
+    .then(data => {
+      packsCache = { expiresAt: Date.now() + PACKS_CACHE_TTL_MS, data }
+      return data
+    })
+    .finally(() => {
+      packsInflight = null
+    })
+
+  return packsInflight
 }
 
 /** GET /api/survey-showdown/packs/:id/questions — auth required; call after token spend confirmed. */

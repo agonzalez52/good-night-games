@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import GameMenu from '@/components/survey-showdown/GameMenu'
-import { judgeAnswer, playBuzzerIn, playReveal, playBuzz, playTick, playTimerExpire } from '@/lib/constants'
+import { AdBanner } from '@/components/survey-showdown/AdBanner'
+import { judgeAnswer, playBuzzerIn, playReveal, playBuzz, playTick, playTimerExpire, SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH } from '@/lib/constants'
 import type { SurveyQuestion } from '@/lib/constants'
 
 interface Team { name: string; score: number }
@@ -52,9 +53,10 @@ interface FaceOffScreenProps {
   menuProps: GameMenuProps
   getJudgeAccessToken: () => Promise<string | null>
   onSkip: () => void
+  showPlaythroughAds: boolean
 }
 
-export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, roundNumber, totalRounds, timerSecs, menuProps, getJudgeAccessToken, onSkip }: FaceOffScreenProps) {
+export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, roundNumber, totalRounds, timerSecs, menuProps, getJudgeAccessToken, onSkip, showPlaythroughAds }: FaceOffScreenProps) {
   const [buzzed, setBuzzed] = useState<number | null>(null)
   const [answer, setAnswer] = useState('')
   const [result, setResult] = useState<{ correct: boolean; teamIndex: number; answerIndex: number | null } | null>(null)
@@ -72,17 +74,21 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
     tickRef.current = setInterval(() => {
       setTimeLeft(prev => {
         const next = prev - 1
-        if (next <= 0) { clearInterval(tickRef.current!); return 0 }
+        if (next <= 0) {
+          clearInterval(tickRef.current!)
+          if (!result) {
+            setTimerActive(false)
+            playTimerExpire()
+            setTimerExpiredFor(buzzed)
+          }
+          return 0
+        }
         if (next <= 5) playTick()
         return next
       })
     }, 1000)
     return () => clearInterval(tickRef.current!)
-  }, [timerActive])
-
-  useEffect(() => {
-    if (timeLeft === 0 && timerActive && !result) { setTimerActive(false); playTimerExpire(); setTimerExpiredFor(buzzed) }
-  }, [timeLeft, timerActive, result])
+  }, [timerActive, result, buzzed])
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -98,7 +104,7 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
     if (!answer.trim() || buzzed === null || judging) return
     clearInterval(tickRef.current!); setTimerActive(false)
     const submitted = answer; setAnswer(''); setJudging(true)
-    const idx = await judgeAnswer(submitted, currentQuestion.answers, [], getJudgeAccessToken)
+    const idx = await judgeAnswer(currentQuestion.question, submitted, currentQuestion.answers, [], getJudgeAccessToken)
     setJudging(false)
     if (idx !== null) { playReveal(); setResult({ correct: true, teamIndex: buzzed, answerIndex: idx }) }
     else { playBuzz(); setResult({ correct: false, teamIndex: buzzed, answerIndex: null }) }
@@ -170,7 +176,7 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
       {buzzed !== null && !result && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, width: 'min(560px,90vw)', animation: 'slideUp 0.3s ease-out', position: 'relative', zIndex: 1 }}>
           <div style={{ display: 'flex', gap: 9, width: '100%' }}>
-            <input ref={inputRef} value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitAnswer()} placeholder={judging ? 'Checking…' : `${teams[buzzed].name}'s answer…`} disabled={judging} style={{ flex: 1, padding: '13px 16px', borderRadius: 12, fontSize: 17, fontFamily: 'var(--font-body)', fontWeight: 500, background: 'rgba(255,255,255,0.05)', border: `1px solid ${timerExpired ? 'rgba(255,77,106,0.5)' : 'rgba(240,165,0,0.4)'}`, color: 'var(--text)', opacity: judging ? 0.55 : 1, boxShadow: timerExpired ? '0 0 0 3px rgba(255,77,106,0.12)' : '0 0 0 3px rgba(240,165,0,0.1)', transition: 'all 0.2s' }} autoFocus />
+            <input ref={inputRef} value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitAnswer()} placeholder={judging ? 'Checking…' : `${teams[buzzed].name}'s answer…`} disabled={judging} maxLength={SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH} style={{ flex: 1, padding: '13px 16px', borderRadius: 12, fontSize: 17, fontFamily: 'var(--font-body)', fontWeight: 500, background: 'rgba(255,255,255,0.05)', border: `1px solid ${timerExpired ? 'rgba(255,77,106,0.5)' : 'rgba(240,165,0,0.4)'}`, color: 'var(--text)', opacity: judging ? 0.55 : 1, boxShadow: timerExpired ? '0 0 0 3px rgba(255,77,106,0.12)' : '0 0 0 3px rgba(240,165,0,0.1)', transition: 'all 0.2s' }} autoFocus />
             <button onClick={submitAnswer} disabled={judging} style={{ padding: '13px 22px', borderRadius: 12, fontSize: 15, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.08em', background: judging ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg,#F0A500,#C07A00)', color: judging ? 'var(--text-muted)' : '#fff', border: 'none', minWidth: 100, boxShadow: judging ? 'none' : '0 4px 18px rgba(240,165,0,0.35)' }}>{judging ? '⏳' : 'SUBMIT'}</button>
           </div>
           {timerExpired && <button onClick={passToOtherTeam} style={{ padding: '10px 28px', borderRadius: 12, fontSize: 14, fontFamily: 'var(--font-display)', fontWeight: 700, letterSpacing: '0.1em', background: 'rgba(155,109,255,0.15)', color: '#9B6DFF', border: '1px solid rgba(155,109,255,0.35)', boxShadow: '0 0 20px rgba(155,109,255,0.15)', animation: 'slideUp 0.3s ease-out' }}>⏭ PASS TO {teams[buzzed === 0 ? 1 : 0].name.toUpperCase()}</button>}
@@ -190,6 +196,8 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
           </div>
         </div>
       )}
+
+      {showPlaythroughAds && <div style={{ width: '100%', maxWidth: 560, position: 'relative', zIndex: 1 }}><AdBanner placement="faceoff" style={{ minHeight: 72 }} /></div>}
 
       {!buzzed && !result && <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '0.18em', color: 'var(--text-faint)', animation: 'pulse 2.2s infinite', textTransform: 'uppercase', position: 'relative', zIndex: 1 }}>● Waiting for buzz-in…</div>}
     </div>

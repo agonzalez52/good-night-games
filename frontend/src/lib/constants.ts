@@ -3,11 +3,20 @@ import { customSurveyAnswerId, postJudge } from "@/lib/api/survey-showdown/judge
 // ─── TOKENS ───────────────────────────────────────────────────────────────────
 export const TOKENS_PER_GAME = 2;
 export const MAX_CUSTOM_SURVEYS = 40;
+export const MAX_CUSTOM_COLLECTIONS = 20;
+export const CUSTOM_SURVEY_NAME_MAX_LENGTH = 100;
+export const CUSTOM_COLLECTION_NAME_MAX_LENGTH = 100;
+export const CUSTOM_SURVEY_QUESTION_MAX_LENGTH = 200;
+export const CUSTOM_SURVEY_ANSWER_MAX_LENGTH = 100;
+/** Must match backend `judgeSchema` (`input` max length). */
+export const SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH = 200;
+/** Must match backend `feedbackSchema` (`message` max length). */
+export const FEEDBACK_MESSAGE_MAX_LENGTH = 1000;
 
 // ─── SURVEY PACKS ─────────────────────────────────────────────────────────────
 // Catalog + questions come from GET /api/survey-showdown/packs and mergeSurveyPacksForGame
 // (see frontend/src/lib/api/survey-showdown/survey-packs.ts). Premium questions load via GET .../packs/:id/questions.
-// Answer.id is survey_answers.id or custom QA hash; SurveyQuestion.id is survey_questions.id or client-generated for custom/import.
+// Answer.id is su_survey_answers.id or custom QA hash; SurveyQuestion.id is su_survey_questions.id or client-generated for custom/import.
 
 export type Answer = { id: string; answer: string; points: number };
 export interface SurveyQuestion {
@@ -17,11 +26,18 @@ export interface SurveyQuestion {
 }
 
 export type Pack = { id: string; name: string; description: string; questions: SurveyQuestion[] };
-/** Mirrors `survey_packs` rows for bundled content; `is_free` matches the DB column. */
+/** Mirrors `su_survey_packs` rows for bundled content; `is_free` matches the DB column. */
 export interface SurveyPack extends Pack {
   is_free: boolean;
 }
-export type CustomSurvey = { id: string; name: string; collectionId: string | null; questions: { id: string; question: string; answers: Answer[] }[] };
+/** One face-off line per DB row; `id` is the board `SurveyQuestion.id` for that row. */
+export type CustomSurvey = {
+  id: string
+  name: string | null
+  collectionId: string | null
+  question: string
+  answers: Answer[]
+}
 export type CustomCollection = { id: string; name: string };
 export type CurrentUser = {
   id: string;
@@ -50,16 +66,17 @@ function newSurveyQuestionClientId(): string {
   return `q-${Math.random().toString(36).slice(2, 12)}`
 }
 
-export function customSurveyToQuestions(survey: CustomSurvey): SurveyQuestion[] {
-  return survey.questions.map((q) => ({
-    id: q.id?.trim() || newSurveyQuestionClientId(),
-    question: q.question,
-    answers: q.answers.map((a) => ({
-      id: a.id?.trim() || customSurveyAnswerId(q.question, a.answer),
+export function customSurveyToBoardQuestion(survey: CustomSurvey): SurveyQuestion {
+  const qText = survey.question
+  return {
+    id: survey.id,
+    question: qText,
+    answers: survey.answers.map((a) => ({
+      id: a.id?.trim() || customSurveyAnswerId(qText, a.answer),
       answer: a.answer,
       points: a.points,
     })),
-  }))
+  }
 }
 
 export function resolvePackQuestions(
@@ -71,7 +88,7 @@ export function resolvePackQuestions(
   const FREE_PACKS = surveyPacks.filter(p => p.is_free);
   const PREMIUM_PACKS = surveyPacks.filter(p => !p.is_free);
   const fallbackQuestions = FREE_PACKS[0]?.questions ?? [];
-  const allCustom = customSurveys.flatMap(customSurveyToQuestions);
+  const allCustom = customSurveys.map(customSurveyToBoardQuestion);
   if (packId === "random") {
     const base = [...FREE_PACKS.flatMap(p => p.questions), ...PREMIUM_PACKS.flatMap(p => p.questions)];
     return allCustom.length ? [...allCustom, ...base] : base;
@@ -81,7 +98,7 @@ export function resolvePackQuestions(
   const pp = PREMIUM_PACKS.find(p => p.id === packId); if (pp) return pp.questions;
   const coll = customCollections.find(c => c.id === packId);
   if (coll) {
-    const r = customSurveys.filter(s => s.collectionId === coll.id).flatMap(customSurveyToQuestions);
+    const r = customSurveys.filter(s => s.collectionId === coll.id).map(customSurveyToBoardQuestion);
     return r.length ? r : fallbackQuestions;
   }
   return fallbackQuestions;
@@ -138,18 +155,31 @@ function coerceParsedQuestion(r: { id?: unknown; question?: unknown; answers?: u
 
 export function parseCustomData(text: string): SurveyQuestion[] | null {
   try {
-    const d = JSON.parse(text);
-    const raw = Array.isArray(d) ? d : d.questions && Array.isArray(d.questions) ? d.questions : null;
-    if (!raw) return null;
-    return raw.map((r: { id?: unknown; question?: unknown; answers?: unknown }) => coerceParsedQuestion(r));
-  } catch { return null; }
+    const d = JSON.parse(text) as unknown
+    let raw: unknown[] | null = null
+    if (Array.isArray(d)) raw = d
+    else if (
+      d &&
+      typeof d === 'object' &&
+      d !== null &&
+      'question' in d &&
+      'answers' in d &&
+      typeof (d as { question: unknown }).question === 'string' &&
+      Array.isArray((d as { answers: unknown }).answers)
+    ) {
+      raw = [d as { id?: unknown; question: unknown; answers: unknown }]
+    }
+    if (!raw) return null
+    return raw.map((r) => coerceParsedQuestion(r as { id?: unknown; question?: unknown; answers?: unknown }))
+  } catch { return null }
 }
 
 /**
- * Signed in: exact normalized match, else POST /api/survey-showdown/judge.
- * Signed out: exact normalized match only (no AI).
+ * Exact normalized match first; otherwise POST /api/survey-showdown/judge (AI).
+ * Optional session token is sent when present so judge_cache rows are scoped to the user.
  */
 export async function judgeAnswer(
+  questionText: string,
   input: string,
   answers: Answer[],
   revealedIndices: number[],
@@ -159,29 +189,33 @@ export async function judgeAnswer(
   const exact = checkAnswerExact(input, answers, revealedIndices);
   if (exact !== null) return exact;
   const token = await getAccessToken();
-  if (!token) return null;
   const answerIds = answers.map(a => a.id?.trim()).filter(Boolean) as string[];
   if (answerIds.length !== answers.length) return null;
-  return postJudge(token, input.trim(), answerIds, answers, revealedIndices);
+  return postJudge(token, questionText, input.trim(), answerIds, answers, revealedIndices);
 }
 
 // ─── SOUNDS ───────────────────────────────────────────────────────────────────
-function audioCtx() { return new (window.AudioContext || (window as any).webkitAudioContext)(); }
+function audioCtx() {
+  const audioCtor = window.AudioContext
+    ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!audioCtor) throw new Error('Web Audio API is not available in this browser')
+  return new audioCtor()
+}
 
 export function playBuzz() {
-  try { const c = audioCtx(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "sawtooth"; o.frequency.value = 120; g.gain.setValueAtTime(0.5, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.6); o.start(); o.stop(c.currentTime + 0.6); } catch (_) { }
+  try { const c = audioCtx(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "sawtooth"; o.frequency.value = 120; g.gain.setValueAtTime(0.5, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.6); o.start(); o.stop(c.currentTime + 0.6); } catch { }
 }
 export function playReveal() {
-  try { const c = audioCtx(); [523, 659, 784, 1047].forEach((freq, i) => { const o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = freq; o.type = "triangle"; g.gain.setValueAtTime(0.3, c.currentTime + i * 0.08); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + i * 0.08 + 0.25); o.start(c.currentTime + i * 0.08); o.stop(c.currentTime + i * 0.08 + 0.3); }); } catch (_) { }
+  try { const c = audioCtx(); [523, 659, 784, 1047].forEach((freq, i) => { const o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = freq; o.type = "triangle"; g.gain.setValueAtTime(0.3, c.currentTime + i * 0.08); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + i * 0.08 + 0.25); o.start(c.currentTime + i * 0.08); o.stop(c.currentTime + i * 0.08 + 0.3); }); } catch { }
 }
 export function playBuzzerIn() {
-  try { const c = audioCtx(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "square"; o.frequency.value = 440; g.gain.setValueAtTime(0.4, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.2); o.start(); o.stop(c.currentTime + 0.2); } catch (_) { }
+  try { const c = audioCtx(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "square"; o.frequency.value = 440; g.gain.setValueAtTime(0.4, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.2); o.start(); o.stop(c.currentTime + 0.2); } catch { }
 }
 export function playTick() {
-  try { const c = audioCtx(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "sine"; o.frequency.value = 1200; g.gain.setValueAtTime(0.15, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.06); o.start(); o.stop(c.currentTime + 0.08); } catch (_) { }
+  try { const c = audioCtx(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "sine"; o.frequency.value = 1200; g.gain.setValueAtTime(0.15, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.06); o.start(); o.stop(c.currentTime + 0.08); } catch { }
 }
 export function playTimerExpire() {
-  try { const c = audioCtx(); [300, 240, 180].forEach((freq, i) => { const o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "sawtooth"; o.frequency.value = freq; g.gain.setValueAtTime(0.35, c.currentTime + i * 0.18); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + i * 0.18 + 0.35); o.start(c.currentTime + i * 0.18); o.stop(c.currentTime + i * 0.18 + 0.4); }); } catch (_) { }
+  try { const c = audioCtx(); [300, 240, 180].forEach((freq, i) => { const o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.type = "sawtooth"; o.frequency.value = freq; g.gain.setValueAtTime(0.35, c.currentTime + i * 0.18); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + i * 0.18 + 0.35); o.start(c.currentTime + i * 0.18); o.stop(c.currentTime + i * 0.18 + 0.4); }); } catch { }
 }
 export function playCoinCollect(count = 8) {
   try {
@@ -198,5 +232,5 @@ export function playCoinCollect(count = 8) {
       o.start(t); o.stop(t + 0.2);
     });
     setTimeout(() => c.close(), 3000);
-  } catch (_) { }
+  } catch { }
 }

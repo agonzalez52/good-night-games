@@ -4,7 +4,15 @@ import { useState, useEffect, useRef } from 'react'
 import TokenSVG from '@/components/shared/TokenSVG'
 import AuthModal from '@/components/shared/AuthModal'
 import type { CurrentUser, CustomSurvey, CustomCollection } from '@/lib/constants'
-import type { SurveyPackFreeListItem, SurveyPackPremiumListItem } from '@/lib/api/survey-showdown/survey-packs'
+import type { SurveyPackFreeListItem, SurveyPackPremiumListItem, SurveyPackTag } from '@/lib/api/survey-showdown/survey-packs'
+import { PackTagPillsResponsive } from '@/components/survey-showdown/pack-tag-pills'
+import { createClient } from '@/lib/supabase/client'
+import { sendSignupVerification } from '@/lib/api/auth'
+import {
+  getVerificationFailureFeedback,
+  VERIFY_DELIVERY_STATE,
+  type VerifyDeliveryState,
+} from '@/lib/auth/verification-feedback'
 
 const isMockMode = process.env.NEXT_PUBLIC_MOCK_MODE === 'true'
 
@@ -17,6 +25,49 @@ interface VerificationBannerProps {
 export function VerificationBanner({ email, onClaim }: VerificationBannerProps) {
   const [dismissed, setDismissed] = useState(false)
   const [claimed, setClaimed] = useState(false)
+  const [isSending, setIsSending] = useState(false)
+  const [resendMessage, setResendMessage] = useState('')
+  const [resendError, setResendError] = useState(false)
+  const [deliveryState, setDeliveryState] = useState<VerifyDeliveryState>(VERIFY_DELIVERY_STATE.SENT)
+
+  async function handleResendVerification() {
+    setResendMessage('')
+    setResendError(false)
+    setIsSending(true)
+    try {
+      const supabase = createClient()
+      const { data } = await supabase.auth.getSession()
+      const accessToken = data.session?.access_token
+      if (!accessToken) {
+        setDeliveryState(VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE)
+        setResendMessage('Please sign in again, then resend the verification email.')
+        setResendError(true)
+        return
+      }
+      const result = await sendSignupVerification(accessToken)
+      if (result.alreadyVerified) {
+        setDeliveryState(VERIFY_DELIVERY_STATE.SENT)
+        setClaimed(true)
+        setResendMessage('Email already verified. Signup bonus is already available on this account.')
+        return
+      }
+      if (result.sent) {
+        setDeliveryState(VERIFY_DELIVERY_STATE.SENT)
+        setResendMessage('Verification email sent. Check your inbox and spam folder.')
+        return
+      }
+      setDeliveryState(VERIFY_DELIVERY_STATE.SENT)
+      setResendMessage('A verification email was already sent recently. Please check your inbox.')
+    } catch (verificationError) {
+      const feedback = getVerificationFailureFeedback(verificationError)
+      setDeliveryState(feedback.state)
+      setResendMessage(feedback.message)
+      setResendError(true)
+    } finally {
+      setIsSending(false)
+    }
+  }
+
   if (dismissed) return null
   return (
     <div style={{ width: '100%', background: 'linear-gradient(90deg,rgba(77,126,255,0.18),rgba(77,126,255,0.1))', borderBottom: '1px solid rgba(77,126,255,0.25)', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
@@ -25,11 +76,40 @@ export function VerificationBanner({ email, onClaim }: VerificationBannerProps) 
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', minWidth: 0 }}>
           {claimed
             ? <span style={{ color: '#0FD98A' }}>✓ Email confirmed! <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 free tokens</span> added to your account.</span>
-            : <span>Check your email <span style={{ color: 'var(--text)' }}>({email})</span> to claim your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 free tokens</span></span>
+            : deliveryState === VERIFY_DELIVERY_STATE.TARGETED_FAILURE ? (
+              <span>
+                We could not verify delivery for <span style={{ color: 'var(--text)' }}>{email}</span>. Use a different email provider to unlock your{' '}
+                <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+              </span>
+            ) : deliveryState === VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE ? (
+              <span>
+                Verification email could not be sent right now. You can keep playing and retry to unlock your{' '}
+                <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+              </span>
+            ) : (
+              <span>
+                Account access is unlocked. Verify <span style={{ color: 'var(--text)' }}>{email}</span> to unlock your{' '}
+                <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+              </span>
+            )
           }
+          {resendMessage && (
+            <div style={{ marginTop: 4, color: resendError ? '#FF4D6A' : 'var(--text-faint)' }}>
+              {resendMessage}
+            </div>
+          )}
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        {!claimed && (
+          <button
+            onClick={() => void handleResendVerification()}
+            disabled={isSending}
+            style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', background: 'rgba(77,126,255,0.2)', color: '#4D7EFF', border: '1px solid rgba(77,126,255,0.35)', opacity: isSending ? 0.38 : 1 }}
+          >
+            {isSending ? 'SENDING...' : 'RESEND EMAIL'}
+          </button>
+        )}
         {/* MOCK MODE ONLY */}
         {isMockMode && !claimed && (
           <button onClick={() => { setClaimed(true); onClaim(); setTimeout(() => setDismissed(true), 2500) }}
@@ -55,7 +135,15 @@ interface SurveyPackPickerProps {
   catalogPremium: SurveyPackPremiumListItem[]
 }
 
-export function SurveyPackPicker({ selectedPackId, onToggle, triggerRef, open, customSurveys, customCollections, catalogFree, catalogPremium }: SurveyPackPickerProps) {
+export function SurveyPackPicker({
+  selectedPackId,
+  onToggle,
+  triggerRef,
+  open,
+  customCollections,
+  catalogFree,
+  catalogPremium,
+}: SurveyPackPickerProps) {
   function getLabel(id: string) {
     if (id === 'random') return '🎲 Random Mix'
     if (id === 'custom_all') return '✏ All Custom Surveys'
@@ -65,10 +153,23 @@ export function SurveyPackPicker({ selectedPackId, onToggle, triggerRef, open, c
     const pp = catalogPremium.find(p => p.id === id); if (pp) return pp.name
     return 'Select Surveys'
   }
+  const catalogPack =
+    catalogFree.find(p => p.id === selectedPackId) ??
+    catalogPremium.find(p => p.id === selectedPackId)
+  const catalogTags = catalogPack?.tags?.length ? catalogPack.tags : undefined
+  const primaryLabel = getLabel(selectedPackId)
+
   return (
     <div style={{ width: '100%' }}>
-      <button ref={triggerRef} onClick={onToggle} style={{ width: '100%', padding: '9px 12px', borderRadius: 9, background: 'rgba(255,255,255,0.05)', border: `1px solid ${open ? 'rgba(240,165,0,0.5)' : 'rgba(255,255,255,0.1)'}`, color: 'var(--text)', fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, cursor: 'pointer', transition: 'border-color 0.18s', boxShadow: open ? '0 0 0 3px rgba(240,165,0,0.1)' : 'none' }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getLabel(selectedPackId)}</span>
+      <button ref={triggerRef} onClick={onToggle} style={{ width: '100%', padding: '9px 12px', borderRadius: 9, background: 'rgba(255,255,255,0.05)', border: `1px solid ${open ? 'rgba(240,165,0,0.5)' : 'rgba(255,255,255,0.1)'}`, color: 'var(--text)', fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '0.04em', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, cursor: 'pointer', transition: 'border-color 0.18s', boxShadow: open ? '0 0 0 3px rgba(240,165,0,0.1)' : 'none' }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: 8 }}>
+          <span style={{ flex: '0 1 auto', minWidth: 0, flexShrink: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{primaryLabel}</span>
+          {catalogTags ? (
+            <div style={{ flex: '1 1 0%', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
+              <PackTagPillsResponsive key={selectedPackId} tags={catalogTags} size="compact" align="end" initialMaxVisible={2} />
+            </div>
+          ) : null}
+        </div>
         <span style={{ fontSize: 10, color: 'var(--text-faint)', transition: 'transform 0.18s', transform: open ? 'rotate(180deg)' : 'none', flexShrink: 0 }}>▼</span>
       </button>
     </div>
@@ -99,16 +200,27 @@ export function SurveyPackDropdown({ selectedPackId, onSelectPack, onClose, curr
     <div style={{ fontFamily: 'var(--font-display)', fontSize: 9, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase', padding: '8px 10px 4px', borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: 4 }}>{txt}</div>
   )
 
-  const row = (id: string, name: string, desc: string | null, locked: boolean, extra?: React.ReactNode) => {
+  const row = (id: string, name: string, desc: string | null, locked: boolean, extra?: React.ReactNode, catalogTags?: SurveyPackTag[]) => {
     const isSel = selectedPackId === id
+    const hasPills = Boolean(catalogTags?.length)
+    const showDesc = Boolean(desc?.trim())
     return (
-      <div key={id} onClick={() => handleSelect(id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9, cursor: 'pointer', background: isSel ? 'rgba(240,165,0,0.12)' : 'transparent', transition: 'background 0.15s', opacity: locked ? 0.55 : 1 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: 12, color: isSel ? '#F0A500' : 'var(--text)', letterSpacing: '0.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
-          {desc && <div style={{ fontFamily: 'var(--font-body)', fontSize: 10, color: 'var(--text-faint)', marginTop: 1 }}>{desc}</div>}
+      <div key={id} onClick={() => handleSelect(id)} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 10px', borderRadius: 9, cursor: 'pointer', background: isSel ? 'rgba(240,165,0,0.12)' : 'transparent', transition: 'background 0.15s', opacity: locked ? 0.55 : 1 }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 12, color: isSel ? '#F0A500' : 'var(--text)', letterSpacing: '0.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: '0 1 auto', minWidth: 0 }}>{name}</div>
+            {hasPills && catalogTags && (
+              <div style={{ flex: '1 1 0%', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
+                <PackTagPillsResponsive tags={catalogTags} size="default" align="end" initialMaxVisible={4} />
+              </div>
+            )}
+          </div>
+          {showDesc && (
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 10, color: 'var(--text-faint)', lineHeight: 1.35 }}>{desc}</div>
+          )}
         </div>
         {extra}
-        {isSel && <span style={{ color: '#F0A500', fontSize: 12, flexShrink: 0 }}>✓</span>}
+        {isSel && <span style={{ color: '#F0A500', fontSize: 12, flexShrink: 0, marginTop: 2 }}>✓</span>}
       </div>
     )
   }
@@ -125,13 +237,14 @@ export function SurveyPackDropdown({ selectedPackId, onSelectPack, onClose, curr
         )}
       </>)}
       {sectionLabel('Free')}
-      {catalogFree.map(p => row(p.id, p.name, p.description, false))}
+      {catalogFree.map(p => row(p.id, p.name, p.description, false, undefined, p.tags))}
       {sectionLabel('Tokens Required')}
       {row('random', '🎲 Random Mix', 'Draw from all available surveys', isPremiumLocked,
         <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}><TokenSVG size={14} /></span>
       )}
       {catalogPremium.map(p => row(p.id, p.name, p.description, isPremiumLocked,
-        <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}><TokenSVG size={14} /></span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}><TokenSVG size={14} /></span>,
+        p.tags,
       ))}
     </div>
   )
@@ -143,7 +256,7 @@ export function HowToPlayModal({ onClose }: { onClose: () => void }) {
     { icon: '⚡', title: 'Face-Off', body: "Each round opens with a face-off. One player from each team buzzes in first — press A (Team 1) or L (Team 2), or tap your team tile. The first to buzz in answers. Guess the #1 answer and your team controls the board. Miss, and the other team takes control." },
     { icon: '📋', title: 'Play the Board', body: "The controlling team guesses answers one at a time. Every correct answer earns its point value. Rack up 3 wrong answers and you're out — the other team gets one shot to steal all the points on the board with a single guess." },
     { icon: '🏆', title: 'Win the Game', body: "Points stack up across every round. Most points when the last round ends wins. Ties mean a rematch — no complaints." },
-    { icon: '💡', title: 'Good to Know', body: "• Hit ⟳ Skip Question during the face-off to swap in a different question\n• Use the ⚙️ menu mid-game to adjust the timer or end the game early\n• Build your own surveys from the setup screen" },
+    { icon: '💡', title: 'Good to Know', body: "• Hit ⟳ Skip Question during the face-off to swap in a different question\n• Use the ⚙️ menu mid-game to adjust the timer or end the game early\n• Add face-off prompts under My Surveys (one prompt per row)" },
   ]
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(8px)' }}>
@@ -173,7 +286,7 @@ export function HowToPlayModal({ onClose }: { onClose: () => void }) {
             </div>
           ))}
         </div>
-        <button onClick={onClose} style={{ marginTop: 20, width: '100%', padding: '13px', borderRadius: 12, background: 'linear-gradient(135deg,#F0A500,#C07A00)', color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, letterSpacing: '0.08em', border: 'none', boxShadow: '0 4px 18px rgba(240,165,0,0.3)', cursor: 'pointer' }}>LET'S PLAY!</button>
+        <button onClick={onClose} style={{ marginTop: 20, width: '100%', padding: '13px', borderRadius: 12, background: 'linear-gradient(135deg,#F0A500,#C07A00)', color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, letterSpacing: '0.08em', border: 'none', boxShadow: '0 4px 18px rgba(240,165,0,0.3)', cursor: 'pointer' }}>LET&rsquo;S PLAY!</button>
       </div>
     </div>
   )
@@ -194,7 +307,7 @@ export function ConversionModal({ reason, onClose, onSignUp, onSignIn }: Convers
   const benefits = [
     { icon: '🎟', title: '4 Free Tokens', desc: 'Yours on signup. No card required.', highlight: true },
     { icon: '🃏', title: '6 Survey Packs', desc: 'Home Life, Food & Drink, Work Life, Game Night, and more.' },
-    { icon: '✏', title: 'Custom Surveys', desc: 'Build your own questions and organize them into collections.' },
+    { icon: '✏', title: 'Custom Surveys', desc: 'Add face-off prompts, one per survey row, and sort them into collections.' },
     { icon: '🚫', title: 'Ad-Free Gameplay', desc: 'No interruptions. Just the game.' },
     { icon: '🎮', title: 'Game History', desc: 'Track every win across all your game nights.' },
   ]
@@ -259,7 +372,6 @@ interface SetupHeaderProps {
   onOpenPurchaseModal: () => void
   onOpenCustomSurveys: () => void
   onOpenFeedback: () => void
-  onSimulateReferral: () => void
   onOpenReferral: () => void
   onOpenGameHistory: () => void
 }
@@ -268,7 +380,7 @@ export default function SetupHeader({
   authLoading = false,
   currentUser, onSignIn, onSignOut, onTokensUpdated,
   onOpenPurchaseModal, onOpenCustomSurveys, onOpenFeedback,
-  onSimulateReferral, onOpenReferral, onOpenGameHistory,
+  onOpenReferral, onOpenGameHistory,
 }: SetupHeaderProps) {
   const [open, setOpen] = useState(false)
   const [showAuth, setShowAuth] = useState(false)
@@ -280,6 +392,7 @@ export default function SetupHeader({
   useEffect(() => {
     const newBal = currentUser?.tokenBalance
     if (newBal !== undefined && newBal !== prevBalance.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- remount key + tokenPop when balance changes
       setPillAnimKey(k => k + 1)
       prevBalance.current = newBal
     }
@@ -293,12 +406,17 @@ export default function SetupHeader({
 
   const initials = currentUser?.username ? currentUser.username.slice(0, 2).toUpperCase() : '?'
   const balance = currentUser?.tokenBalance ?? 0
+  const referralsClaimed = currentUser?.referralsClaimed || 0
+  const canOpenReferral = Boolean(currentUser?.emailVerified) && referralsClaimed < 3
   const zeroBal = currentUser && balance === 0
   /** Session is syncing (e.g. after sign-in) — hide logged-in/out chrome until /me + balance return */
   const headerPending = authLoading && !currentUser
 
   useEffect(() => {
-    if (headerPending) setOpen(false)
+    if (headerPending) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- close menu while auth is mid-flight
+      setOpen(false)
+    }
   }, [headerPending])
 
   return (
@@ -318,8 +436,8 @@ export default function SetupHeader({
                 <TokenSVG size={14} />
                 <span style={{ fontFamily: 'var(--font-score)', fontSize: 18, color: zeroBal ? '#FF4D6A' : '#F0A500', lineHeight: 1 }}>{balance}</span>
               </div>
-              {currentUser.emailVerified && (currentUser.referralsClaimed || 0) < 3 && (() => {
-                const claimed = currentUser.referralsClaimed || 0
+              {canOpenReferral && (() => {
+                const claimed = referralsClaimed
                 const pct = Math.round((claimed / 3) * 100)
                 return (
                   <button onClick={() => onOpenReferral()} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 100, background: 'rgba(15,217,138,0.06)', border: '1px solid rgba(15,217,138,0.25)', cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap', animation: claimed === 0 ? 'greenPulse 2.6s ease-in-out infinite' : 'none' }}>
@@ -367,7 +485,7 @@ export default function SetupHeader({
                     {[
                       { icon: '✏', label: 'My Surveys & Collections', fn: () => { onOpenCustomSurveys(); setOpen(false) } },
                       { icon: '🎮', label: 'Game History', fn: () => { onOpenGameHistory(); setOpen(false) } },
-                      { icon: '👥', label: 'Refer a Friend', fn: () => { onOpenReferral(); setOpen(false) } },
+                      ...(canOpenReferral ? [{ icon: '👥', label: 'Refer a Friend', fn: () => { onOpenReferral(); setOpen(false) } }] : []),
                       { icon: '💬', label: 'Feedback', fn: () => { onOpenFeedback(); setOpen(false) } },
                     ].map(({ icon, label, fn }) => (
                       <button key={label} onClick={fn} style={{ width: '100%', padding: '9px 10px', borderRadius: 9, fontSize: 13, fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--text-muted)', border: 'none', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', cursor: 'pointer' }}>

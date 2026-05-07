@@ -1,7 +1,14 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { sendSignupVerification } from '@/lib/api/auth'
+import {
+  getVerificationFailureFeedback,
+  VERIFY_DELIVERY_STATE,
+  type VerifyDeliveryState,
+} from '@/lib/auth/verification-feedback'
 import TokenSVG from '@/components/shared/TokenSVG'
 import type { CurrentUser } from '@/lib/constants'
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
@@ -30,6 +37,7 @@ interface AuthModalProps {
 }
 
 export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onTokenCredit }: AuthModalProps) {
+  const searchParams = useSearchParams()
   const [mode, setMode] = useState<AuthModalMode>(initialMode)
   const [signinMethod, setSigninMethod] = useState<'password' | 'magic'>('password')
   const [email, setEmail] = useState('')
@@ -40,6 +48,10 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
   const [showPassword, setShowPassword] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [isResendingVerification, setIsResendingVerification] = useState(false)
+  const [verifyMessage, setVerifyMessage] = useState('')
+  const [verifyMessageError, setVerifyMessageError] = useState(false)
+  const [verifyDeliveryState, setVerifyDeliveryState] = useState<VerifyDeliveryState>(VERIFY_DELIVERY_STATE.SENT)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const turnstileRef = useRef<TurnstileInstance>(null)
   const [forgotTurnstileToken, setForgotTurnstileToken] = useState<string | null>(null)
@@ -112,11 +124,16 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
     setLoading(true)
     const supabase = createClient()
+    const refParam = searchParams.get('ref')?.trim()
+    const referralCodeFromUrl = refParam ? refParam.toUpperCase() : ''
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { username: username || email.split('@')[0] },
+        data: {
+          username: username || email.split('@')[0],
+          ...(referralCodeFromUrl ? { referral_code: referralCodeFromUrl } : {}),
+        },
         emailRedirectTo: `${window.location.origin}/auth/callback?next=/survey-showdown`,
       },
     })
@@ -172,6 +189,31 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
         id: data.user.id, email, username: username || email.split('@')[0],
         tokenBalance: 0, emailVerified: false, referralsClaimed: 0,
       })
+      setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
+      setVerifyMessage('')
+      setVerifyMessageError(false)
+      if (accessToken) {
+        try {
+          const verificationResult = await sendSignupVerification(accessToken)
+          if (verificationResult.alreadyVerified) {
+            setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
+            setVerifyMessage('Email already verified. Your signup bonus is already unlocked.')
+            setVerifyMessageError(false)
+          }
+          if (!verificationResult.sent) {
+            setVerifyMessage('Verification email was already sent recently. Please check your inbox.')
+          }
+        } catch (verificationError) {
+          const feedback = getVerificationFailureFeedback(verificationError)
+          setVerifyDeliveryState(feedback.state)
+          setVerifyMessage(feedback.message)
+          setVerifyMessageError(true)
+        }
+      } else {
+        setVerifyDeliveryState(VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE)
+        setVerifyMessage('Could not send verification right now. Try resend or continue and verify later.')
+        setVerifyMessageError(true)
+      }
       setMode('verify')
       return
     }
@@ -192,9 +234,19 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
 
   async function handleGoogleAuth() {
     const supabase = createClient()
+    const refParam = searchParams.get('ref')?.trim()
+    const referralCodeFromUrl = refParam ? refParam.toUpperCase() : ''
+    const base = `${window.location.origin}/auth/callback`
+    const callbackParams = new URLSearchParams()
+    if (referralCodeFromUrl) {
+      callbackParams.set('next', '/survey-showdown')
+      callbackParams.set('ref', referralCodeFromUrl)
+    }
+    if (mode === 'signup') callbackParams.set('oauth_signup', '1')
+    const redirectTo = callbackParams.size > 0 ? `${base}?${callbackParams.toString()}` : base
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo },
     })
     // Page redirects — no further action needed
   }
@@ -279,6 +331,46 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
     onClose()
   }
 
+  async function handleResendSignupVerification() {
+    setVerifyMessage('')
+    setVerifyMessageError(false)
+    setIsResendingVerification(true)
+    try {
+      const supabase = createClient()
+      const { data } = await supabase.auth.getSession()
+      const accessToken = data.session?.access_token
+      if (!accessToken) {
+        setVerifyDeliveryState(VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE)
+        setVerifyMessage('Please sign in again, then resend verification.')
+        setVerifyMessageError(true)
+        return
+      }
+      const result = await sendSignupVerification(accessToken)
+      if (result.alreadyVerified) {
+        setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
+        setVerifyMessage('Email already verified. Your signup bonus is already unlocked.')
+        setVerifyMessageError(false)
+        return
+      }
+      if (result.sent) {
+        setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
+        setVerifyMessage('Verification email sent. Check your inbox and spam folder.')
+        setVerifyMessageError(false)
+        return
+      }
+      setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
+      setVerifyMessage('Verification email was sent recently. Please check your inbox.')
+      setVerifyMessageError(false)
+    } catch (verificationError) {
+      const feedback = getVerificationFailureFeedback(verificationError)
+      setVerifyDeliveryState(feedback.state)
+      setVerifyMessage(feedback.message)
+      setVerifyMessageError(true)
+    } finally {
+      setIsResendingVerification(false)
+    }
+  }
+
   const isSignUp = mode === 'signup'
   const isVerify = mode === 'verify'
   const isForgot = mode === 'forgot'
@@ -304,7 +396,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
           <div>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: '#F0A500' }}>
-              {isVerify ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Your free tokens have been sent! <TokenSVG size={20} /></span>
+              {isVerify ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Verify to unlock free tokens <TokenSVG size={20} /></span>
                 : isExistingGoogle ? 'This email uses Google'
                   : isSignUp ? 'Create Account'
                     : isForgot ? 'Forgot Password'
@@ -319,7 +411,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
                   ? (googleHintFromForgot
                     ? 'This account signs in with Google — use Google to continue'
                     : 'Sign in with Google, or finish linking a password via email')
-                  : isSignUp ? 'Sign up for free tokens and more!'
+                  : isSignUp ? 'Get instant account access. Bonus tokens unlock after email verification.'
                     : isForgot ? "We'll send you a reset link"
                       : isForgotSent ? null
                         : isResetPassword ? 'Choose a new password for your account'
@@ -448,9 +540,9 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
             <div style={{ fontSize: 52, marginBottom: 16 }}>📬</div>
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: 24, textAlign: 'left' }}>
-              We sent a password reset link to <span style={{ color: 'var(--text)' }}>{email}</span>. Click the link in that email, and you'll be brought back here to set a new password.
+              We sent a password reset link to <span style={{ color: 'var(--text)' }}>{email}</span>. Click the link in that email, and you&apos;ll be brought back here to set a new password.
               <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 10, background: 'rgba(77,126,255,0.07)', border: '1px solid rgba(77,126,255,0.2)', fontSize: 12, color: 'var(--text-faint)' }}>
-                Didn't get it? Check your spam folder, or{' '}
+                Didn&apos;t get it? Check your spam folder, or{' '}
                 <button onClick={enterForgotMode} style={{ background: 'none', border: 'none', color: '#4D7EFF', fontFamily: 'var(--font-body)', fontSize: 12, textDecoration: 'underline', textUnderlineOffset: 2, padding: 0, cursor: 'pointer' }}>try again</button>.
               </div>
             </div>
@@ -501,23 +593,40 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
         {isVerify && (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
             <div style={{ fontSize: 52, marginBottom: 16 }}>🎉</div>
-            <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: 24, textAlign: 'left' }}>
-              Steps to claim:
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
-                {[
-                  { n: '1', text: <span>Open the email we just sent to you at <span style={{ color: 'var(--text)' }}>{email}</span></span> },
-                  { n: '2', text: <span>Click the redemption link</span> },
-                ].map(({ n, text }) => (
-                  <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                    <div style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(240,165,0,0.15)', border: '1px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-display)', fontSize: 12, color: '#F0A500', flexShrink: 0, marginTop: 1 }}>{n}</div>
-                    <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, paddingTop: 3 }}>{text}</div>
+            {verifyDeliveryState === VERIFY_DELIVERY_STATE.SENT ? (
+              <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: 24, textAlign: 'left' }}>
+                You are signed in and can start playing now. To unlock your signup bonus:
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+                  {[
+                    { n: '1', text: <span>Open the verification email for <span style={{ color: 'var(--text)' }}>{email}</span></span> },
+                    { n: '2', text: <span>Tap the verification link</span> },
+                  ].map(({ n, text }) => (
+                    <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <div style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(240,165,0,0.15)', border: '1px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-display)', fontSize: 12, color: '#F0A500', flexShrink: 0, marginTop: 1 }}>{n}</div>
+                      <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, paddingTop: 3 }}>{text}</div>
+                    </div>
+                  ))}
+                  <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.6, paddingLeft: 32 }}>
+                    Verification unlocks your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span> and referral rewards.
                   </div>
-                ))}
-                <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.6, paddingLeft: 32 }}>
-                  You'll be brought straight back here with your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 free tokens</span> already in your account.
                 </div>
               </div>
-            </div>
+            ) : (
+              <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: 24, textAlign: 'left' }}>
+                You are signed in and can start playing now. We could not deliver a verification email yet.
+                <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, background: 'rgba(255,77,106,0.08)', border: '1px solid rgba(255,77,106,0.24)', fontSize: 12, color: '#FF8DA0', lineHeight: 1.6 }}>
+                  {verifyMessage || 'Could not send verification right now. Try resend or continue and verify later.'}
+                </div>
+                <div style={{ marginTop: 10, fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.6 }}>
+                  You can still play now. Use resend below and verify later to unlock your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+                </div>
+              </div>
+            )}
+            {verifyMessage && verifyDeliveryState === VERIFY_DELIVERY_STATE.SENT && (
+              <div style={{ marginTop: -8, marginBottom: 14, textAlign: 'left', fontFamily: 'var(--font-body)', fontSize: 12, color: verifyMessageError ? '#FF4D6A' : 'var(--text-faint)' }}>
+                {verifyMessage}
+              </div>
+            )}
             {/* MOCK MODE ONLY — gated behind NEXT_PUBLIC_MOCK_MODE */}
             {isMockMode && (
               <button
@@ -526,8 +635,11 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
                 🧪 SIMULATE EMAIL LINK CLICK
               </button>
             )}
+            <button onClick={() => void handleResendSignupVerification()} disabled={isResendingVerification} style={{ marginTop: 10, width: '100%', padding: '11px', borderRadius: 12, background: 'rgba(77,126,255,0.18)', color: '#4D7EFF', fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', border: '1px solid rgba(77,126,255,0.35)', opacity: isResendingVerification ? 0.38 : 1 }}>
+              {isResendingVerification ? 'SENDING...' : 'RESEND VERIFICATION EMAIL'}
+            </button>
             <button onClick={onClose} style={{ marginTop: 10, width: '100%', padding: '11px', borderRadius: 12, background: 'transparent', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', fontSize: 13, border: '1px solid rgba(255,255,255,0.08)' }}>
-              I'll do it later
+              I&apos;ll do it later
             </button>
             <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 10, letterSpacing: '0.16em', color: 'var(--text-faint)', textTransform: 'uppercase', marginBottom: 12 }}>You also now have access to</div>
@@ -553,9 +665,9 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
             <div style={{ fontSize: 52, marginBottom: 16 }}>✉️</div>
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: 24, textAlign: 'left' }}>
-              We sent a sign-in link to <span style={{ color: 'var(--text)' }}>{email}</span>. Click it and you'll be signed in instantly — no password needed.
+              We sent a sign-in link to <span style={{ color: 'var(--text)' }}>{email}</span>. Click it and you&apos;ll be signed in instantly — no password needed.
               <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 10, background: 'rgba(77,126,255,0.07)', border: '1px solid rgba(77,126,255,0.2)', fontSize: 12, color: 'var(--text-faint)' }}>
-                Didn't get it? Check your spam folder, or{' '}
+                Didn&apos;t get it? Check your spam folder, or{' '}
                 <button onClick={() => { setMode('signin'); setError('') }} style={{ background: 'none', border: 'none', color: '#4D7EFF', fontFamily: 'var(--font-body)', fontSize: 12, textDecoration: 'underline', textUnderlineOffset: 2, padding: 0, cursor: 'pointer' }}>try again</button>.
               </div>
             </div>
@@ -620,7 +732,11 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
                   <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={isSignUp ? 'At least 6 characters' : 'Your password'} style={{ ...fieldStyle, paddingRight: 44 }}
                     onFocus={e => { e.target.style.borderColor = 'rgba(77,126,255,0.5)'; e.target.style.boxShadow = '0 0 0 3px rgba(77,126,255,0.1)' }}
                     onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none' }}
-                    onKeyDown={e => { if (e.key === 'Enter') isSignUp ? handleSignUp() : handleSignIn() }} />
+                    onKeyDown={e => {
+                      if (e.key !== 'Enter') return
+                      if (isSignUp) handleSignUp()
+                      else handleSignIn()
+                    }} />
                   <button type="button" onClick={() => setShowPassword(v => !v)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--text-faint)', fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center' }}>
                     {showPassword ? '🙈' : '👁'}
                   </button>
@@ -630,7 +746,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
 
             {!isSignUp && signinMethod === 'magic' && (
               <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.6, padding: '10px 12px', borderRadius: 10, background: 'rgba(77,126,255,0.06)', border: '1px solid rgba(77,126,255,0.15)' }}>
-                We'll email you a one-time link. Click it and you're in — no password needed.
+                We&apos;ll email you a one-time link. Click it and you&apos;re in — no password needed.
               </div>
             )}
 

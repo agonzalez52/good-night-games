@@ -6,7 +6,6 @@ import SetupHeader, {
   SurveyPackPicker,
   SurveyPackDropdown,
   HowToPlayModal,
-  ConversionModal,
 } from '@/components/survey-showdown/SetupHeader'
 import { AdBanner } from '@/components/survey-showdown/AdBanner'
 import { FeedbackModal, ReferralModal, GameHistoryModal } from '@/components/survey-showdown/Modals'
@@ -41,10 +40,10 @@ interface SetupScreenProps {
   customCollections: CustomCollection[]
   onSaveSurvey: (survey: CustomSurvey) => void
   onDeleteSurvey: (id: string) => void
+  onMoveSurveyToCollection: (surveyId: string, targetCollectionId: string | null) => void
   onSaveCollection: (collection: CustomCollection) => void
   onDeleteCollection: (id: string) => void
   onCloseSurveys: () => void
-  onSimulateReferral: () => void
   gameHistory: GameHistoryRecord[]
 }
 
@@ -52,9 +51,9 @@ export default function SetupScreen({
   onStart, packQuestions, setupRoundCountCap, packsLoading, packsError, catalogFree, catalogPremium,
   authLoading = false, currentUser, onSignIn, onSignOut, onTokensUpdated,
   onOpenPurchaseModal, selectedPackId, onSelectPack,
-  customSurveys, customCollections, onSaveSurvey, onDeleteSurvey,
+  customSurveys, customCollections, onSaveSurvey, onDeleteSurvey, onMoveSurveyToCollection,
   onSaveCollection, onDeleteCollection, onCloseSurveys,
-  onSimulateReferral, gameHistory,
+  gameHistory,
 }: SetupScreenProps) {
   const [team1, setTeam1] = useState('TEAM 1')
   const [team2, setTeam2] = useState('TEAM 2')
@@ -66,6 +65,7 @@ export default function SetupScreen({
   const [showReferral, setShowReferral] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showAuthFromPicker, setShowAuthFromPicker] = useState(false)
+  const [showAiJudgingInfo, setShowAiJudgingInfo] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 320 })
   const pickerTriggerRef = useRef<HTMLButtonElement>(null)
@@ -73,11 +73,7 @@ export default function SetupScreen({
   const screenRef = useRef<HTMLDivElement>(null)
   const timerOptions = [3, 5, 10]
   const maxRounds = Math.max(packQuestions.length, setupRoundCountCap, 1)
-
-  useEffect(() => {
-    if (packsLoading) return
-    setNumRounds(n => Math.min(n, maxRounds))
-  }, [maxRounds, packsLoading])
+  const clampedNumRounds = Math.min(numRounds, maxRounds)
 
   useEffect(() => {
     function h(e: MouseEvent) {
@@ -107,6 +103,8 @@ export default function SetupScreen({
     (customCollections.some(c => c.id === selectedPackId) &&
       customSurveys.some(s => s.collectionId === selectedPackId))
   const canStart = !packsLoading && hasSurveySource
+  const isAuthenticated = Boolean(currentUser)
+  const aiJudgingPending = authLoading && !currentUser
 
   return (
     <div ref={screenRef} style={{ minHeight: '100vh', background: 'radial-gradient(ellipse 80% 60% at 50% -10%,rgba(77,126,255,0.12) 0%,transparent 70%),#060914', display: 'flex', flexDirection: 'column', fontFamily: 'var(--font-body)', position: 'relative' }}>
@@ -126,7 +124,6 @@ export default function SetupScreen({
           onTokensUpdated={onTokensUpdated} onOpenPurchaseModal={onOpenPurchaseModal}
           onOpenCustomSurveys={() => setShowCustomSurveys(true)}
           onOpenFeedback={() => setShowFeedback(true)}
-          onSimulateReferral={onSimulateReferral}
           onOpenReferral={() => setShowReferral(true)}
           onOpenGameHistory={() => setShowHistory(true)}
         />
@@ -139,27 +136,44 @@ export default function SetupScreen({
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 24, animation: 'logoIn 0.7s cubic-bezier(0.34,1.56,0.64,1) both' }}>
           <div style={{ fontFamily: 'var(--font-outfit)', fontWeight: 800, fontSize: 25, color: 'var(--text-faint)', marginBottom: 10 }}>good night games</div>
-          <div style={{ display: 'inline-block', position: 'relative', verticalAlign: 'top' }}>
-            {/* AnswerTile-shaped outline: no fill, gold border, centered on the line between SURVEY / SHOWDOWN */}
-            <div
-              aria-hidden
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: 'calc(100% + clamp(36px, 8vw, 72px))',
-                height: 'clamp(40.25px, 6.51vw, 68.10px)',
-                borderRadius: 14,
-                border: '5px solid var(--gold)',
-                background: 'transparent',
-                boxSizing: 'border-box',
-                opacity: 0.85,
-                pointerEvents: 'none',
-                zIndex: 0,
-              }}
-            />
-            <div style={{ position: 'relative', zIndex: 1, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(44px,8vw,88px)', color: 'var(--gold)', letterSpacing: '-0.01em', lineHeight: 0.92, animation: 'glow 3.5s ease-in-out infinite', textShadow: '0 4px 0 rgba(0,0,0,0.4), 0 0 60px rgba(240,165,0,0.45), 0 0 120px rgba(240,165,0,0.2)' }}>SURVEY<br />SHOWDOWN</div>
+          <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2, verticalAlign: 'top' }}>
+            {['SURVEY', 'SHOWDOWN'].map(word => (
+              <div
+                key={word}
+                style={{
+                  position: 'relative',
+                  display: 'inline-block',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 800,
+                  fontSize: 'clamp(44px,8vw,88px)',
+                  color: 'var(--gold)',
+                  letterSpacing: '-0.01em',
+                  lineHeight: 0.92,
+                  animation: 'glow 3.5s ease-in-out infinite',
+                  textShadow: '0 4px 0 rgba(0,0,0,0.4), 0 0 60px rgba(240,165,0,0.45), 0 0 120px rgba(240,165,0,0.2)',
+                }}
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '58%',
+                    transform: 'translate(-50%, -50%)',
+                    width: '125%',
+                    height: '0.7em',
+                    borderRadius: 14,
+                    border: '5px solid var(--gold)',
+                    background: 'transparent',
+                    boxSizing: 'border-box',
+                    opacity: 0.85,
+                    pointerEvents: 'none',
+                    zIndex: 0,
+                  }}
+                />
+                <span style={{ position: 'relative', zIndex: 1 }}>{word}</span>
+              </div>
+            ))}
           </div>
           <div style={{ marginTop: 14 }}>
             <button onClick={() => setShowHowToPlay(true)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3, padding: 0 }}>How to Play</button>
@@ -205,18 +219,16 @@ export default function SetupScreen({
             <div style={{ flex: '0 0 auto', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '14px 16px', textAlign: 'center', minWidth: 140 }} aria-busy={packsLoading}>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 9, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase', marginBottom: 10 }}>🎮 Rounds</div>
               {packsLoading ? (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, marginBottom: 5 }}>
-                    <div style={{ width: 120, height: 36, borderRadius: 10, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} aria-hidden />
-                  </div>
-                  <div style={{ color: 'var(--text-faint)', fontSize: 10, fontFamily: 'var(--font-body)', marginTop: 5 }}>Loading packs…</div>
-                </>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, paddingTop: 2, paddingBottom: 2 }} aria-hidden>
+                  <div style={{ width: 120, height: 36, borderRadius: 10, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} />
+                  <div style={{ width: 72, height: 10, borderRadius: 5, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} />
+                </div>
               ) : (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-                    <button type="button" onClick={() => setNumRounds(r => Math.max(1, r - 1))} style={{ width: 32, height: 32, borderRadius: 9, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                    <div style={{ fontFamily: 'var(--font-score)', fontSize: 44, color: '#F0A500', minWidth: 40, textAlign: 'center', lineHeight: 1, textShadow: '0 0 20px rgba(240,165,0,0.3)' }}>{numRounds}</div>
-                    <button type="button" onClick={() => setNumRounds(r => Math.min(maxRounds, r + 1))} style={{ width: 32, height: 32, borderRadius: 9, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                    <button type="button" onClick={() => setNumRounds(r => Math.max(1, Math.min(r, maxRounds) - 1))} style={{ width: 32, height: 32, borderRadius: 9, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                    <div style={{ fontFamily: 'var(--font-score)', fontSize: 44, color: '#F0A500', minWidth: 40, textAlign: 'center', lineHeight: 1, textShadow: '0 0 20px rgba(240,165,0,0.3)' }}>{clampedNumRounds}</div>
+                    <button type="button" onClick={() => setNumRounds(r => Math.min(maxRounds, Math.min(r, maxRounds) + 1))} style={{ width: 32, height: 32, borderRadius: 9, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
                   </div>
                   <div style={{ color: 'var(--text-faint)', fontSize: 10, fontFamily: 'var(--font-body)', marginTop: 5 }}>{maxRounds} available</div>
                 </>
@@ -238,19 +250,91 @@ export default function SetupScreen({
             </div>
           </div>
 
-          {/* Buzz key hint */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '10px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
-            {[{ key: 'A', label: 'Team 1 Buzz' }, { key: 'L', label: 'Team 2 Buzz' }].map(({ key, label }) => (
-              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(240,165,0,0.12)', border: '1px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-score)', fontSize: 15, color: '#F0A500' }}>{key}</div>
-                <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)' }}>{label}</span>
+          <div
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)', position: 'relative' }}
+            aria-busy={aiJudgingPending}
+          >
+            {aiJudgingPending ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%' }} aria-hidden>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite', flexShrink: 0 }} />
+                <div style={{ width: 170, height: 12, borderRadius: 6, background: 'var(--surface)', animation: 'shimmer 1.2s ease-in-out infinite' }} />
               </div>
-            ))}
+            ) : (
+              <>
+                <span
+                  aria-hidden
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    background: isAuthenticated ? 'var(--green)' : 'var(--red)',
+                    boxShadow: isAuthenticated ? '0 0 10px var(--green-glow)' : '0 0 10px var(--red-glow)',
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                  {isAuthenticated ? 'AI Judging Enabled' : 'AI Judging Disabled'}
+                </span>
+                {!isAuthenticated && (
+                  <div style={{ position: 'relative', display: 'inline-flex' }}>
+                    <button
+                      type="button"
+                      aria-label="How to enable AI judging"
+                      onMouseEnter={() => setShowAiJudgingInfo(true)}
+                      onMouseLeave={() => setShowAiJudgingInfo(false)}
+                      onFocus={() => setShowAiJudgingInfo(true)}
+                      onBlur={() => setShowAiJudgingInfo(false)}
+                      style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: '50%',
+                        border: '1px solid var(--border-2)',
+                        background: 'rgba(255,255,255,0.04)',
+                        color: 'var(--text-muted)',
+                        fontFamily: 'var(--font-display)',
+                        fontSize: 12,
+                        lineHeight: 1,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'help',
+                        padding: 0,
+                      }}
+                    >
+                      i
+                    </button>
+                    {showAiJudgingInfo && (
+                      <div
+                        role="tooltip"
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 8px)',
+                          right: 0,
+                          width: 260,
+                          padding: '10px 11px',
+                          borderRadius: 10,
+                          border: '1px solid var(--border-2)',
+                          background: 'rgba(6,9,20,0.98)',
+                          color: 'var(--text-muted)',
+                          fontFamily: 'var(--font-body)',
+                          fontSize: 11,
+                          lineHeight: 1.4,
+                          boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                          zIndex: 20,
+                        }}
+                      >
+                        Only exact matching will be used. Sign up or sign in to enable AI judging.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           {/* Start Game */}
           <button
-            onClick={() => onStart(team1 || 'TEAM 1', team2 || 'TEAM 2', timerSecs, numRounds)}
+            onClick={() => onStart(team1 || 'TEAM 1', team2 || 'TEAM 2', timerSecs, clampedNumRounds)}
             disabled={!canStart}
             style={{
               width: '100%', padding: '16px 24px', borderRadius: 14, fontSize: 20, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.1em', background: 'linear-gradient(135deg,#F0A500 0%,#C07A00 100%)', color: '#fff', border: 'none', boxShadow: '0 6px 28px rgba(240,165,0,0.4),inset 0 1px 0 rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
@@ -268,7 +352,7 @@ export default function SetupScreen({
 
         {/* Ad banner */}
         <div style={{ marginTop: 24, width: 'min(540px,100%)', animation: 'slideUp 0.5s 0.44s ease-out both' }}>
-          <AdBanner style={{ minHeight: 80 }} />
+          <AdBanner placement="setup" style={{ minHeight: 80 }} />
         </div>
       </div>
 
@@ -283,9 +367,9 @@ export default function SetupScreen({
       )}
 
       {showHistory && <GameHistoryModal onClose={() => setShowHistory(false)} gameHistory={gameHistory} />}
-      {showReferral && currentUser && <ReferralModal onClose={() => setShowReferral(false)} currentUser={currentUser} onSimulateReferral={onSimulateReferral} />}
+      {showReferral && currentUser && <ReferralModal onClose={() => setShowReferral(false)} currentUser={currentUser} />}
       {showAuthFromPicker && <AuthModal initialMode="signup" onClose={() => setShowAuthFromPicker(false)} onAuth={user => { onSignIn(user); setShowAuthFromPicker(false) }} onTokenCredit={n => { onTokensUpdated((currentUser?.tokenBalance || 0) + n); setShowAuthFromPicker(false) }} />}
-      {showCustomSurveys && currentUser && <CustomSurveysModal surveys={customSurveys} collections={customCollections} onSaveSurvey={onSaveSurvey} onDeleteSurvey={onDeleteSurvey} onSaveCollection={onSaveCollection} onDeleteCollection={onDeleteCollection} onClose={() => { setShowCustomSurveys(false); onCloseSurveys() }} />}
+      {showCustomSurveys && currentUser && <CustomSurveysModal surveys={customSurveys} collections={customCollections} onSaveSurvey={onSaveSurvey} onDeleteSurvey={onDeleteSurvey} onMoveSurveyToCollection={onMoveSurveyToCollection} onSaveCollection={onSaveCollection} onDeleteCollection={onDeleteCollection} onClose={() => { setShowCustomSurveys(false); onCloseSurveys() }} />}
       {showHowToPlay && <HowToPlayModal onClose={() => setShowHowToPlay(false)} />}
       {showFeedback && <FeedbackModal onClose={() => setShowFeedback(false)} currentUser={currentUser} />}
     </div>

@@ -11,6 +11,19 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/survey-showdown'
+  const ref = searchParams.get('ref')
+  const verifySignup = searchParams.get('verify_signup')
+  const oauthSignup = searchParams.get('oauth_signup')
+  const challenge = searchParams.get('challenge')?.trim()
+  const buildNextRedirect = (): URL => {
+    const redirectUrl = new URL(next, origin)
+    if (oauthSignup === '1') redirectUrl.searchParams.set('oauth_signup', '1')
+    if (verifySignup === '1' && challenge) {
+      redirectUrl.searchParams.set('verify_signup', '1')
+      redirectUrl.searchParams.set('challenge', challenge)
+    }
+    return redirectUrl
+  }
 
   if (code) {
     const cookieStore = await cookies()
@@ -32,8 +45,19 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`)
+      const refParam = ref?.trim()
+      if (refParam) {
+        const normalized = refParam.toUpperCase()
+        await supabase.auth.updateUser({ data: { referral_code: normalized } })
+      }
+      return NextResponse.redirect(buildNextRedirect().toString())
     }
+  }
+
+  // Magic-link verification callbacks can arrive without PKCE `code`.
+  // Preserve verification params so the client can confirm challenge.
+  if (verifySignup === '1' && challenge) {
+    return NextResponse.redirect(buildNextRedirect().toString())
   }
 
   // Auth failed — redirect to game with error param so the app can surface a message
