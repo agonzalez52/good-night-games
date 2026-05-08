@@ -124,6 +124,11 @@
   padding: 0;
 }
 
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
 input,
 textarea {
   outline: none;

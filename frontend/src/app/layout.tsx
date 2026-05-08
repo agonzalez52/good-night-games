@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import Script from 'next/script'
 import { Providers } from './providers'
 import './globals.css'
@@ -24,7 +25,49 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             crossOrigin="anonymous"
           />
         )}
-        <Providers>{children}</Providers>
+        <Providers>
+          <div
+            style={{
+              minHeight: '100vh',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <div style={{ flex: 1 }}>{children}</div>
+            <footer
+              role="contentinfo"
+              style={{
+                borderTop: '1px solid var(--border)',
+                padding: '16px 20px 24px',
+                marginTop: 'auto',
+                background: 'var(--surface)',
+              }}
+            >
+              <nav
+                aria-label="Legal"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  flexWrap: 'wrap',
+                  gap: 16,
+                }}
+              >
+                <Link
+                  href="/privacy"
+                  style={{
+                    fontFamily: 'var(--font-body)',
+                    fontSize: 14,
+                    color: 'var(--text-muted)',
+                    textDecoration: 'underline',
+                    textUnderlineOffset: 4,
+                  }}
+                >
+                  Privacy Policy
+                </Link>
+              </nav>
+            </footer>
+          </div>
+        </Providers>
       </body>
     </html>
   )
