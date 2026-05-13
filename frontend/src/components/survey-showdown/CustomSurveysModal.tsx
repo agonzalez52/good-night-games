@@ -14,7 +14,12 @@ import { customSurveyAnswerId } from '@/lib/api/survey-showdown/judge'
 
 const SURVEY_DRAG_MIME = 'application/x-good-night-survey-id'
 
-type SurveyDraft = { id: string; question: string; answers: Answer[] }
+/** Modal-local draft: points may be empty while typing; blur normalizes to 1–100 (empty → 10). */
+interface DraftAnswer extends Omit<Answer, 'points'> {
+  points: number | ''
+}
+
+type SurveyDraft = { id: string; question: string; answers: DraftAnswer[] }
 
 const emptySurveyDraft = (): SurveyDraft => ({
   id: `q-${Date.now()}-${Math.random()}`,
@@ -24,7 +29,13 @@ const emptySurveyDraft = (): SurveyDraft => ({
     { id: '', answer: '', points: 20 },
   ],
 })
-const emptyAnswer = (): Answer => ({ id: '', answer: '', points: 10 })
+const emptyAnswer = (): DraftAnswer => ({ id: '', answer: '', points: 10 })
+
+const clampSurveyPoints = (n: number) => Math.max(1, Math.min(100, Math.round(n)))
+
+/** Empty draft → 10 (matches emptyAnswer default); otherwise clamp 1–100. */
+const normalizePointsOnBlur = (points: number | '') =>
+  points === '' ? 10 : clampSurveyPoints(Number.isFinite(points) ? points : 10)
 
 interface CustomSurveysModalProps {
   surveys: CustomSurvey[]
@@ -96,6 +107,10 @@ export default function CustomSurveysModal({
         return
       }
     }
+    if (answers.some((a) => a.points === '')) {
+      setSError('Enter points for every answer.')
+      return
+    }
     const survey: CustomSurvey = {
       id: editingSurvey?.id || `s-${Date.now()}`,
       name,
@@ -104,7 +119,7 @@ export default function CustomSurveysModal({
       answers: answers.map((a) => ({
         id: customSurveyAnswerId(qText, a.answer.trim()),
         answer: a.answer.trim(),
-        points: a.points,
+        points: a.points as number,
       })),
     }
     onSaveSurvey(survey); goToList()
@@ -128,10 +143,16 @@ export default function CustomSurveysModal({
   function updateQuestionLine(val: string) {
     setSDraft((f) => ({ ...f, question: val }))
   }
-  function updateAnswer(ai: number, field: 'answer' | 'points', val: string | number) {
+  function updateAnswer(ai: number, field: 'answer' | 'points', val: string | number | '') {
     setSDraft((f) => ({
       ...f,
-      answers: f.answers.map((a, j) => (j === ai ? { ...a, [field]: val } as Answer : a)),
+      answers: f.answers.map((a, j) =>
+        j === ai
+          ? field === 'answer'
+            ? { ...a, answer: val as string }
+            : { ...a, points: val as number | '' }
+          : a,
+      ),
     }))
   }
   function addAnswer() {
@@ -300,7 +321,22 @@ export default function CustomSurveysModal({
                   {sDraft.answers.map((a, ai) => (
                     <div key={ai} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <input value={a.answer} onChange={e => updateAnswer(ai, 'answer', e.target.value)} placeholder={`Answer ${ai + 1}`} style={{ ...fieldStyle, flex: 1 }} maxLength={CUSTOM_SURVEY_ANSWER_MAX_LENGTH} />
-                      <input type="number" value={a.points} onChange={e => { const n = Math.max(1, Math.min(100, Number(e.target.value) || 1)); updateAnswer(ai, 'points', n) }} min={1} max={100} style={{ ...fieldStyle, width: 64, textAlign: 'center', padding: '9px 6px' }} />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={a.points === '' ? '' : String(a.points)}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          if (v === '') updateAnswer(ai, 'points', '')
+                          else {
+                            const n = Number.parseInt(v, 10)
+                            if (Number.isFinite(n)) updateAnswer(ai, 'points', n)
+                          }
+                        }}
+                        onBlur={() => updateAnswer(ai, 'points', normalizePointsOnBlur(a.points))}
+                        aria-label={`Points for answer ${ai + 1}`}
+                        style={{ ...fieldStyle, width: 64, textAlign: 'center', padding: '9px 6px' }}
+                      />
                       {sDraft.answers.length > 2 && <button onClick={() => removeAnswer(ai)} style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,77,106,0.08)', color: '#FF4D6A', border: '1px solid rgba(255,77,106,0.2)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}>✕</button>}
                     </div>
                   ))}

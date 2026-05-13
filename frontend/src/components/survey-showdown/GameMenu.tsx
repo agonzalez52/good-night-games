@@ -12,10 +12,15 @@ export default function GameMenu({ timerSecs, onTimerChange, onNewGame }: GameMe
   const [open, setOpen] = useState(false)
   const [confirmEndGame, setConfirmEndGame] = useState(false)
   const [localTimer, setLocalTimer] = useState(timerSecs)
+  const [localTimerDraft, setLocalTimerDraft] = useState(String(timerSecs))
   const menuRef = useRef<HTMLDivElement>(null)
   const timerOptions = [3, 5, 10]
 
   useEffect(() => { setLocalTimer(timerSecs) }, [timerSecs])
+
+  useEffect(() => {
+    if (open) setLocalTimerDraft(String(timerSecs))
+  }, [open, timerSecs])
 
   useEffect(() => {
     if (!open) return
@@ -32,6 +37,17 @@ export default function GameMenu({ timerSecs, onTimerChange, onNewGame }: GameMe
     const v = Math.max(3, Math.min(120, val))
     setLocalTimer(v)
     onTimerChange(v)
+  }
+
+  function commitTimerDraft() {
+    const parsed = Number(localTimerDraft)
+    if (localTimerDraft.trim() === '' || !Number.isFinite(parsed)) {
+      setLocalTimerDraft(String(localTimer))
+      return
+    }
+    const clamped = Math.max(3, Math.min(120, Math.floor(parsed)))
+    applyTimer(clamped)
+    setLocalTimerDraft(String(clamped))
   }
 
   const btnStyle: React.CSSProperties = {
@@ -56,12 +72,12 @@ export default function GameMenu({ timerSecs, onTimerChange, onNewGame }: GameMe
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase' }}>⏱ Face-Off Timer</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 9 }}>
               {timerOptions.map(s => (
-                <button key={s} onClick={() => applyTimer(s)} style={{ padding: '5px 10px', borderRadius: 8, fontSize: 13, fontFamily: 'var(--font-score)', letterSpacing: '0.06em', background: localTimer === s ? 'linear-gradient(135deg,#F0A500,#C07A00)' : 'rgba(255,255,255,0.04)', color: localTimer === s ? '#fff' : 'var(--text-muted)', border: localTimer === s ? '1px solid rgba(240,165,0,0.6)' : '1px solid rgba(255,255,255,0.07)', boxShadow: localTimer === s ? '0 2px 12px rgba(240,165,0,0.25)' : 'none' }}>{s}s</button>
+                <button key={s} onClick={() => { applyTimer(s); setLocalTimerDraft(String(s)) }} style={{ padding: '5px 10px', borderRadius: 8, fontSize: 13, fontFamily: 'var(--font-score)', letterSpacing: '0.06em', background: localTimer === s ? 'linear-gradient(135deg,#F0A500,#C07A00)' : 'rgba(255,255,255,0.04)', color: localTimer === s ? '#fff' : 'var(--text-muted)', border: localTimer === s ? '1px solid rgba(240,165,0,0.6)' : '1px solid rgba(255,255,255,0.07)', boxShadow: localTimer === s ? '0 2px 12px rgba(240,165,0,0.25)' : 'none' }}>{s}s</button>
               ))}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ color: 'var(--text-faint)', fontFamily: 'var(--font-body)', fontSize: 11 }}>Custom:</span>
-              <input type="number" min={3} max={120} value={localTimer} onChange={e => applyTimer(Number(e.target.value) || 5)} style={{ width: 56, padding: '5px 8px', borderRadius: 8, fontSize: 14, fontFamily: 'var(--font-score)', textAlign: 'center', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', color: '#F0A500' }} />
+              <input type="number" min={3} max={120} value={localTimerDraft} onChange={e => setLocalTimerDraft(e.target.value)} onBlur={commitTimerDraft} style={{ width: 56, padding: '5px 8px', borderRadius: 8, fontSize: 14, fontFamily: 'var(--font-score)', textAlign: 'center', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', color: '#F0A500' }} />
               <span style={{ color: 'var(--text-faint)', fontSize: 11, fontFamily: 'var(--font-body)' }}>sec</span>
             </div>
           </div>
