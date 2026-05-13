@@ -52,6 +52,7 @@ export const updateSurveyCollectionBodySchema = z.object({
   ),
 })
 
+/** POST /api/survey-showdown/judge — request body. Response contract: `routes/survey-showdown/judge-contract.ts`. */
 export const judgeSchema = z.object({
   input: z.string().min(1).max(200),
   questionText: z.string().min(1).max(CUSTOM_SURVEY_QUESTION_MAX_LENGTH),

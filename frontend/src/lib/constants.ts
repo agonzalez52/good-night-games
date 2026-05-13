@@ -1,4 +1,5 @@
 import { customSurveyAnswerId, postJudge } from "@/lib/api/survey-showdown/judge";
+import type { JudgeAnswerOutcome } from "@/lib/api/survey-showdown/judge-contract";
 
 // ─── TOKENS ───────────────────────────────────────────────────────────────────
 export const TOKENS_PER_GAME = 2;
@@ -184,14 +185,16 @@ export async function judgeAnswer(
   answers: Answer[],
   revealedIndices: number[],
   getAccessToken: () => Promise<string | null>
-): Promise<number | null> {
-  if (!input?.trim()) return null;
+): Promise<JudgeAnswerOutcome> {
+  if (!input?.trim()) return { matchedIndex: null };
   const exact = checkAnswerExact(input, answers, revealedIndices);
-  if (exact !== null) return exact;
+  if (exact !== null) return { matchedIndex: exact };
   const token = await getAccessToken();
   const answerIds = answers.map(a => a.id?.trim()).filter(Boolean) as string[];
-  if (answerIds.length !== answers.length) return null;
-  return postJudge(token, questionText, input.trim(), answerIds, answers, revealedIndices);
+  if (answerIds.length !== answers.length) return { matchedIndex: null };
+  const server = await postJudge(token, questionText, input.trim(), answerIds, answers, revealedIndices);
+  if (!server) return { matchedIndex: null };
+  return { matchedIndex: server.matchedIndex, serverStatus: server.serverStatus };
 }
 
 // ─── SOUNDS ───────────────────────────────────────────────────────────────────
