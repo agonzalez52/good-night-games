@@ -18,6 +18,20 @@ import type { SurveyPackFreeListItem, SurveyPackPremiumListItem } from '@/lib/ap
 
 const DEFAULT_SETUP_ROUNDS = 5
 
+const TIMER_SEC_MIN = 3
+const TIMER_SEC_MAX = 120
+
+const clampTimer = (n: number) => Math.max(TIMER_SEC_MIN, Math.min(TIMER_SEC_MAX, n))
+
+/** Empty or invalid `raw` uses `fallback`, then result is clamped to 3–120. */
+const parseTimerSeconds = (raw: string, fallback: number): number => {
+  const trimmed = raw.trim()
+  if (trimmed === '') return clampTimer(fallback)
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed)) return clampTimer(fallback)
+  return clampTimer(parsed)
+}
+
 interface SetupScreenProps {
   onStart: (team1: string, team2: string, timerSecs: number, numRounds: number) => void
   packQuestions: SurveyQuestion[]
@@ -58,6 +72,7 @@ export default function SetupScreen({
   const [team1, setTeam1] = useState('TEAM 1')
   const [team2, setTeam2] = useState('TEAM 2')
   const [timerSecs, setTimerSecs] = useState(5)
+  const [timerCustomInput, setTimerCustomInput] = useState('5')
   const [numRounds, setNumRounds] = useState(DEFAULT_SETUP_ROUNDS)
   const [showCustomSurveys, setShowCustomSurveys] = useState(false)
   const [showHowToPlay, setShowHowToPlay] = useState(false)
@@ -239,12 +254,34 @@ export default function SetupScreen({
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 9, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase', marginBottom: 10 }}>⏱ Face-Off Timer</div>
               <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                 {timerOptions.map(s => (
-                  <button key={s} onClick={() => setTimerSecs(s)} style={{ flex: 1, height: 38, borderRadius: 9, fontSize: 13, fontFamily: 'var(--font-score)', letterSpacing: '0.04em', background: timerSecs === s ? 'linear-gradient(135deg,#F0A500,#C07A00)' : 'rgba(255,255,255,0.04)', color: timerSecs === s ? '#fff' : 'var(--text-muted)', border: timerSecs === s ? '1px solid rgba(240,165,0,0.6)' : '1px solid rgba(255,255,255,0.07)', boxShadow: timerSecs === s ? '0 2px 14px rgba(240,165,0,0.3)' : 'none' }}>{s}s</button>
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => {
+                      setTimerSecs(s)
+                      setTimerCustomInput(String(s))
+                    }}
+                    style={{ flex: 1, height: 38, borderRadius: 9, fontSize: 13, fontFamily: 'var(--font-score)', letterSpacing: '0.04em', background: timerSecs === s ? 'linear-gradient(135deg,#F0A500,#C07A00)' : 'rgba(255,255,255,0.04)', color: timerSecs === s ? '#fff' : 'var(--text-muted)', border: timerSecs === s ? '1px solid rgba(240,165,0,0.6)' : '1px solid rgba(255,255,255,0.07)', boxShadow: timerSecs === s ? '0 2px 14px rgba(240,165,0,0.3)' : 'none' }}
+                  >
+                    {s}s
+                  </button>
                 ))}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ color: 'var(--text-faint)', fontFamily: 'var(--font-body)', fontSize: 11, flexShrink: 0 }}>Custom:</span>
-                <input type="number" min={3} max={120} value={timerSecs} onChange={e => setTimerSecs(Math.max(3, Math.min(120, Number(e.target.value) || 5)))} style={{ width: 52, padding: '5px', borderRadius: 8, fontSize: 13, fontFamily: 'var(--font-score)', textAlign: 'center', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', color: '#F0A500' }} />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={timerCustomInput}
+                  onChange={e => setTimerCustomInput(e.target.value)}
+                  onBlur={() => {
+                    const result = parseTimerSeconds(timerCustomInput, 5)
+                    setTimerSecs(result)
+                    setTimerCustomInput(String(result))
+                  }}
+                  style={{ width: 52, padding: '5px', borderRadius: 8, fontSize: 13, fontFamily: 'var(--font-score)', textAlign: 'center', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', color: '#F0A500' }}
+                />
                 <span style={{ color: 'var(--text-faint)', fontSize: 11, fontFamily: 'var(--font-body)' }}>sec</span>
               </div>
             </div>
@@ -334,7 +371,12 @@ export default function SetupScreen({
 
           {/* Start Game */}
           <button
-            onClick={() => onStart(team1 || 'TEAM 1', team2 || 'TEAM 2', timerSecs, clampedNumRounds)}
+            onClick={() => {
+              const secs = parseTimerSeconds(timerCustomInput, timerSecs)
+              setTimerSecs(secs)
+              setTimerCustomInput(String(secs))
+              onStart(team1 || 'TEAM 1', team2 || 'TEAM 2', secs, clampedNumRounds)
+            }}
             disabled={!canStart}
             style={{
               width: '100%', padding: '16px 24px', borderRadius: 14, fontSize: 20, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.1em', background: 'linear-gradient(135deg,#F0A500 0%,#C07A00 100%)', color: '#fff', border: 'none', boxShadow: '0 6px 28px rgba(240,165,0,0.4),inset 0 1px 0 rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,

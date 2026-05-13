@@ -3,11 +3,14 @@
 import { useState, useEffect, useRef } from 'react'
 import GameMenu from '@/components/survey-showdown/GameMenu'
 import { AdBanner } from '@/components/survey-showdown/AdBanner'
+import { AIJudgeThinkingIndicator, AI_JUDGE_ANIMATION_VARIANTS } from '@/components/survey-showdown/AIJudgeThinkingIndicator'
 import { judgeAnswer, playBuzzerIn, playReveal, playBuzz, playTick, playTimerExpire, SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH } from '@/lib/constants'
 import type { SurveyQuestion } from '@/lib/constants'
 
 interface Team { name: string; score: number }
 interface GameMenuProps { timerSecs: number; onTimerChange: (s: number) => void; onNewGame: () => void }
+const MIN_JUDGE_FEEDBACK_MS = 520
+const AI_JUDGE_VARIANT = AI_JUDGE_ANIMATION_VARIANTS.neuralBrain
 
 function ScoreBoard({ teams, activeTeam }: { teams: Team[]; activeTeam: number | null }) {
   return (
@@ -104,7 +107,11 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
     if (!answer.trim() || buzzed === null || judging) return
     clearInterval(tickRef.current!); setTimerActive(false)
     const submitted = answer; setAnswer(''); setJudging(true)
-    const idx = await judgeAnswer(currentQuestion.question, submitted, currentQuestion.answers, [], getJudgeAccessToken)
+    const judgePromise = judgeAnswer(currentQuestion.question, submitted, currentQuestion.answers, [], getJudgeAccessToken)
+    const [{ matchedIndex: idx }] = await Promise.all([
+      judgePromise,
+      new Promise(resolve => setTimeout(resolve, MIN_JUDGE_FEEDBACK_MS)),
+    ])
     setJudging(false)
     if (idx !== null) { playReveal(); setResult({ correct: true, teamIndex: buzzed, answerIndex: idx }) }
     else { playBuzz(); setResult({ correct: false, teamIndex: buzzed, answerIndex: null }) }
@@ -132,6 +139,7 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
 
   const showTimer = buzzed !== null && !result && !stealMode
   const timerExpired = timerExpiredFor !== null && !stealMode
+  const showAiJudgeIndicator = judging && !showPlaythroughAds
 
   return (
     <div style={{ minHeight: '100vh', background: 'radial-gradient(ellipse 80% 50% at 50% -5%,rgba(77,126,255,0.1) 0%,transparent 65%),#060914', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 28px', gap: 20, overflow: 'hidden', position: 'relative' }}>
@@ -151,7 +159,7 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 18, padding: '22px 40px', textAlign: 'center', maxWidth: 780, width: '100%', boxShadow: '0 8px 40px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.06)', position: 'relative', zIndex: 1, animation: 'slideUp 0.5s ease-out both' }}>
         <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 11, letterSpacing: '0.2em', color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase' }}>The Question</div>
         <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(18px,2.4vw,30px)', color: 'var(--text)', letterSpacing: '-0.01em', lineHeight: 1.3 }}>{currentQuestion.question}</div>
-        {!buzzed && !result && (
+        {buzzed === null && !result && (
           <button onClick={onSkip} style={{ marginTop: 14, padding: '7px 18px', borderRadius: 10, fontSize: 11, fontFamily: 'var(--font-display)', fontWeight: 700, letterSpacing: '0.12em', background: 'rgba(77,126,255,0.08)', color: '#4D7EFF', border: '1px solid rgba(77,126,255,0.25)', textTransform: 'uppercase', cursor: 'pointer' }}>⟳ Skip Question</button>
         )}
       </div>
@@ -175,6 +183,11 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
 
       {buzzed !== null && !result && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, width: 'min(560px,90vw)', animation: 'slideUp 0.3s ease-out', position: 'relative', zIndex: 1 }}>
+          {showAiJudgeIndicator && (
+            <div style={{ width: '100%', marginBottom: 18 }}>
+              <AIJudgeThinkingIndicator variant={AI_JUDGE_VARIANT} />
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 9, width: '100%' }}>
             <input ref={inputRef} value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitAnswer()} placeholder={judging ? 'Checking…' : `${teams[buzzed].name}'s answer…`} disabled={judging} maxLength={SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH} style={{ flex: 1, padding: '13px 16px', borderRadius: 12, fontSize: 17, fontFamily: 'var(--font-body)', fontWeight: 500, background: 'rgba(255,255,255,0.05)', border: `1px solid ${timerExpired ? 'rgba(255,77,106,0.5)' : 'rgba(240,165,0,0.4)'}`, color: 'var(--text)', opacity: judging ? 0.55 : 1, boxShadow: timerExpired ? '0 0 0 3px rgba(255,77,106,0.12)' : '0 0 0 3px rgba(240,165,0,0.1)', transition: 'all 0.2s' }} autoFocus />
             <button onClick={submitAnswer} disabled={judging} style={{ padding: '13px 22px', borderRadius: 12, fontSize: 15, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.08em', background: judging ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg,#F0A500,#C07A00)', color: judging ? 'var(--text-muted)' : '#fff', border: 'none', minWidth: 100, boxShadow: judging ? 'none' : '0 4px 18px rgba(240,165,0,0.35)' }}>{judging ? '⏳' : 'SUBMIT'}</button>
@@ -199,7 +212,7 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
 
       {showPlaythroughAds && <div style={{ width: '100%', maxWidth: 560, position: 'relative', zIndex: 1 }}><AdBanner placement="faceoff" style={{ minHeight: 72 }} /></div>}
 
-      {!buzzed && !result && <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '0.18em', color: 'var(--text-faint)', animation: 'pulse 2.2s infinite', textTransform: 'uppercase', position: 'relative', zIndex: 1 }}>● Waiting for buzz-in…</div>}
+      {buzzed === null && !result && <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '0.18em', color: 'var(--text-faint)', animation: 'pulse 2.2s infinite', textTransform: 'uppercase', position: 'relative', zIndex: 1 }}>● Waiting for buzz-in…</div>}
     </div>
   )
 }

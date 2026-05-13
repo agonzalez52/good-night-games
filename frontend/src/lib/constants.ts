@@ -1,4 +1,5 @@
 import { customSurveyAnswerId, postJudge } from "@/lib/api/survey-showdown/judge";
+import type { JudgeAnswerOutcome } from "@/lib/api/survey-showdown/judge-contract";
 
 // ─── TOKENS ───────────────────────────────────────────────────────────────────
 export const TOKENS_PER_GAME = 2;
@@ -113,6 +114,52 @@ export function shuffleArray<T>(arr: T[]): T[] {
   return a;
 }
 
+/**
+ * Rebuilds `scheduled[fromRound..]` so each upcoming slot uses a question whose id is not
+ * already used in completed rounds (`scheduled[0..fromRound-1]`), and ids do not repeat in
+ * the suffix. Prefix rows are unchanged. Used after face-off skip (swap can duplicate ids
+ * across rounds) and when advancing to the next face-off.
+ */
+export function reconcileSurveyRoundQuestions(
+  scheduled: SurveyQuestion[],
+  fromRound: number,
+  packPool: SurveyQuestion[]
+): SurveyQuestion[] {
+  const safeFrom = Math.max(0, Math.min(fromRound, scheduled.length))
+  const prefix = scheduled.slice(0, safeFrom)
+  const playedIds = new Set(prefix.map((q) => q.id))
+  const poolById = new Map(packPool.map((q) => [q.id, q] as const))
+  const availableOrdered = packPool.filter((q) => !playedIds.has(q.id))
+  const suffixLen = scheduled.length - safeFrom
+  if (suffixLen <= 0) return [...prefix]
+
+  const usedInSuffix = new Set<string>()
+  const newSuffix: SurveyQuestion[] = []
+
+  for (let i = safeFrom; i < scheduled.length; i++) {
+    const q = scheduled[i]
+    if (!playedIds.has(q.id) && !usedInSuffix.has(q.id) && poolById.has(q.id)) {
+      newSuffix.push(q)
+      usedInSuffix.add(q.id)
+    }
+  }
+
+  for (const q of availableOrdered) {
+    if (newSuffix.length >= suffixLen) break
+    if (usedInSuffix.has(q.id)) continue
+    newSuffix.push(q)
+    usedInSuffix.add(q.id)
+  }
+
+  while (newSuffix.length < suffixLen) {
+    const filler = availableOrdered[newSuffix.length % Math.max(availableOrdered.length, 1)]
+    if (!filler) break
+    newSuffix.push(filler)
+  }
+
+  return [...prefix, ...newSuffix.slice(0, suffixLen)]
+}
+
 export function normalize(str: string | null | undefined): string {
   if (str == null) return "";
   return String(str).toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
@@ -184,14 +231,16 @@ export async function judgeAnswer(
   answers: Answer[],
   revealedIndices: number[],
   getAccessToken: () => Promise<string | null>
-): Promise<number | null> {
-  if (!input?.trim()) return null;
+): Promise<JudgeAnswerOutcome> {
+  if (!input?.trim()) return { matchedIndex: null };
   const exact = checkAnswerExact(input, answers, revealedIndices);
-  if (exact !== null) return exact;
+  if (exact !== null) return { matchedIndex: exact };
   const token = await getAccessToken();
   const answerIds = answers.map(a => a.id?.trim()).filter(Boolean) as string[];
-  if (answerIds.length !== answers.length) return null;
-  return postJudge(token, questionText, input.trim(), answerIds, answers, revealedIndices);
+  if (answerIds.length !== answers.length) return { matchedIndex: null };
+  const server = await postJudge(token, questionText, input.trim(), answerIds, answers, revealedIndices);
+  if (!server) return { matchedIndex: null };
+  return { matchedIndex: server.matchedIndex, serverStatus: server.serverStatus };
 }
 
 // ─── SOUNDS ───────────────────────────────────────────────────────────────────

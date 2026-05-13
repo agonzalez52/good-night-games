@@ -1,3 +1,9 @@
+import {
+  JUDGE_RESPONSE_STATUS,
+  normalizeJudgeOkResponse,
+  type JudgeAnswerOutcome,
+} from '@/lib/api/survey-showdown/judge-contract'
+
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
 
 interface JudgeAnswerRow {
@@ -21,13 +27,7 @@ export function customSurveyAnswerId(question: string, answer: string): string {
   return `ss:qa:${djb2Hash(`${q}\u001f${a}`)}`
 }
 
-interface JudgeResponse {
-  isMatch?: boolean
-  matchedAnswer?: string | null
-  matchedIndex?: number | null
-}
-
-/** POST /api/survey-showdown/judge — backend handles judge_cache and rate limits */
+/** POST /api/survey-showdown/judge — backend handles judge_cache and rate limits. Contract: `./judge-contract`. */
 export async function postJudge(
   token: string | null,
   questionText: string,
@@ -35,7 +35,7 @@ export async function postJudge(
   answerIds: string[],
   answers: JudgeAnswerRow[],
   revealedIndices: number[]
-): Promise<number | null> {
+): Promise<JudgeAnswerOutcome | null> {
   const res = await fetch(`${BACKEND_URL}/api/survey-showdown/judge`, {
     method: 'POST',
     headers: {
@@ -54,7 +54,10 @@ export async function postJudge(
     }),
   })
   if (!res.ok) return null
-  const data = (await res.json()) as JudgeResponse
-  if (typeof data.matchedIndex === 'number' && !Number.isNaN(data.matchedIndex)) return data.matchedIndex
-  return null
+  const body = normalizeJudgeOkResponse(await res.json())
+  if (!body) return null
+  return {
+    matchedIndex: body.status === JUDGE_RESPONSE_STATUS.FINAL_MATCH ? body.matchedIndex : null,
+    serverStatus: body.status,
+  }
 }
