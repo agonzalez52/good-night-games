@@ -34,6 +34,7 @@ import {
 import {
   TOKENS_PER_GAME, resolvePackQuestions,
   shuffleArray, playCoinCollect,
+  reconcileSurveyRoundQuestions,
 } from '@/lib/constants'
 import type { CurrentUser, CustomSurvey, CustomCollection, GameHistoryRecord, SurveyQuestion } from '@/lib/constants'
 
@@ -501,7 +502,12 @@ export default function SurveyShowdownApp() {
     setTeams(t => t.map((team, i) => i === winnerTeam ? { ...team, score: team.score + points } : team))
   }
 
-  function handleNextRound() { setCurrentRound(r => r + 1); setScreen('faceoff') }
+  function handleNextRound() {
+    const nextFaceOffRound = currentRound + 1
+    setShuffledQuestions((prev) => reconcileSurveyRoundQuestions(prev, nextFaceOffRound, packQuestions))
+    setCurrentRound((r) => r + 1)
+    setScreen('faceoff')
+  }
 
   function handleSkipQuestion() {
     const usedIds = new Set(shuffledQuestions.slice(0, currentRound).map((q) => q.id))
@@ -510,7 +516,10 @@ export default function SurveyShowdownApp() {
     const currentId = shuffledQuestions[currentRound]?.id
     const currentIdx = pool.findIndex((q) => q.id === currentId)
     const nextIdx = (currentIdx + 1) % pool.length
-    setShuffledQuestions((prev) => prev.map((r, i) => (i === currentRound ? pool[nextIdx] : r)))
+    setShuffledQuestions((prev) => {
+      const swapped = prev.map((r, i) => (i === currentRound ? pool[nextIdx] : r))
+      return reconcileSurveyRoundQuestions(swapped, currentRound, packQuestions)
+    })
   }
 
   function getPackName(id: string) {
