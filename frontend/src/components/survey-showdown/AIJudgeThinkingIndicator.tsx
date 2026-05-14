@@ -1,21 +1,83 @@
 'use client'
+
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 
-export const AI_JUDGE_ANIMATION_VARIANTS = {
-  neuralPulse: 'neuralPulse',
-  neuralBrain: 'neuralBrain',
-  synapseWave: 'synapseWave',
-} as const
+const DEFAULT_STAR_STEP_DEGREES = 45
+// How long each full animation takes
+const DEFAULT_STAR_STEP_INTERVAL_MS = 800
+// How long the rotation part of the animation takes
+const DEFAULT_STAR_STEP_TRANSITION_MS = 400
+const MIN_STAR_STEP_DEGREES = 0.1
+const MIN_STAR_STEP_INTERVAL_MS = 1
+const STAR_TRANSFORM_EASING = 'cubic-bezier(0.22,0.61,0.36,1)'
 
-export type AIJudgeAnimationVariant = typeof AI_JUDGE_ANIMATION_VARIANTS[keyof typeof AI_JUDGE_ANIMATION_VARIANTS]
-
-interface AIJudgeThinkingIndicatorProps {
-  variant?: AIJudgeAnimationVariant
+export interface AIJudgeThinkingIndicatorProps {
+  /** Degrees the front star advances each step (back star moves the opposite way). Default 45. */
+  starStepDegrees?: number
+  /**
+   * Milliseconds for each step’s transform to run (how quickly the stars sweep through `starStepDegrees`).
+   * Use 0 for an instant snap.
+   */
+  starStepTransitionMs?: number
+  /**
+   * Milliseconds between each discrete rotation step. When omitted, `starFullRotationSeconds` is used
+   * to derive an interval from `starStepDegrees`; when that is also omitted, defaults to 700ms.
+   */
+  starStepIntervalMs?: number
+  /**
+   * Wall-clock seconds for one full 360° at the current step size, used only to derive the step interval
+   * when `starStepIntervalMs` is not set: interval = `starFullRotationSeconds * 1000 * starStepDegrees / 360`.
+   */
+  starFullRotationSeconds?: number
+  /**
+   * Milliseconds from mount until the first rotation step. When omitted, defaults to one `intervalMs`
+   * so the first move still lines up with the legacy `setInterval`-only timing. Use `0` for an immediate
+   * first step once the component paints.
+   */
+  starTimeBeforeFirstRotationMs?: number
 }
 
-const STAR_TICK_MS = 500
-const STAR_DEGREES_PER_TICK = 45
+function resolveStarStepDegrees(value: number | undefined): number {
+  const resolved = value ?? DEFAULT_STAR_STEP_DEGREES
+  if (!Number.isFinite(resolved) || resolved <= 0) return DEFAULT_STAR_STEP_DEGREES
+  return Math.max(MIN_STAR_STEP_DEGREES, resolved)
+}
+
+function resolveStarStepTransitionMs(value: number | undefined): number {
+  const resolved = value ?? DEFAULT_STAR_STEP_TRANSITION_MS
+  if (!Number.isFinite(resolved) || resolved < 0) return DEFAULT_STAR_STEP_TRANSITION_MS
+  return resolved
+}
+
+function resolveStarStepIntervalMs(
+  intervalMs: number | undefined,
+  fullRotationSeconds: number | undefined,
+  stepDegrees: number,
+): number {
+  if (intervalMs !== undefined && Number.isFinite(intervalMs) && intervalMs > 0) {
+    return Math.max(MIN_STAR_STEP_INTERVAL_MS, intervalMs)
+  }
+  if (
+    fullRotationSeconds !== undefined &&
+    Number.isFinite(fullRotationSeconds) &&
+    fullRotationSeconds > 0
+  ) {
+    return Math.max(MIN_STAR_STEP_INTERVAL_MS, (fullRotationSeconds * 1000 * stepDegrees) / 360)
+  }
+  return DEFAULT_STAR_STEP_INTERVAL_MS
+}
+
+/** When `explicitMs` is omitted, match legacy first tick: one full interval after mount. */
+function resolveStarTimeBeforeFirstRotationMs(
+  explicitMs: number | undefined,
+  intervalMs: number,
+): number {
+  if (explicitMs !== undefined && Number.isFinite(explicitMs) && explicitMs >= 0) {
+    return explicitMs
+  }
+  return intervalMs
+}
 
 function svgCoord(n: number): number {
   return Math.round(n * 1e6) / 1e6
@@ -78,28 +140,75 @@ const textStyle: CSSProperties = {
   zIndex: 3,
 }
 
-export function AIJudgeThinkingIndicator({ variant: _variant = AI_JUDGE_ANIMATION_VARIANTS.neuralPulse }: AIJudgeThinkingIndicatorProps) {
+export function AIJudgeThinkingIndicator({
+  starStepDegrees,
+  starStepTransitionMs,
+  starStepIntervalMs,
+  starFullRotationSeconds,
+  starTimeBeforeFirstRotationMs,
+}: AIJudgeThinkingIndicatorProps = {}) {
+  const stepDegrees = resolveStarStepDegrees(starStepDegrees)
+  const transitionMs = resolveStarStepTransitionMs(starStepTransitionMs)
+  const intervalMs = resolveStarStepIntervalMs(starStepIntervalMs, starFullRotationSeconds, stepDegrees)
+  const timeBeforeFirstRotationMs = resolveStarTimeBeforeFirstRotationMs(
+    starTimeBeforeFirstRotationMs,
+    intervalMs,
+  )
+
   const [step, setStep] = useState(0)
 
   useEffect(() => {
-    const tickId = window.setInterval(() => {
-      setStep(previous => previous + 1)
-    }, STAR_TICK_MS)
-    return () => window.clearInterval(tickId)
-  }, [])
+    setStep(0)
 
-  const frontRotation = step * STAR_DEGREES_PER_TICK
-  const backRotation = 45 - step * STAR_DEGREES_PER_TICK
+    let intervalId: number | undefined
+    const delayId = window.setTimeout(() => {
+      setStep(previous => previous + 1)
+      intervalId = window.setInterval(() => {
+        setStep(previous => previous + 1)
+      }, intervalMs)
+    }, timeBeforeFirstRotationMs)
+
+    return () => {
+      window.clearTimeout(delayId)
+      if (intervalId !== undefined) window.clearInterval(intervalId)
+    }
+  }, [intervalMs, timeBeforeFirstRotationMs])
+
+  const frontRotation = step * stepDegrees
+  const backRotation = stepDegrees - step * stepDegrees
   const starPoints = fourPointStar(20, 20, 12.5, 3.8)
+
+  const transformTransition =
+    transitionMs <= 0 ? 'none' : `transform ${transitionMs}ms ${STAR_TRANSFORM_EASING}`
+
+  const starMotionBase: CSSProperties = {
+    position: 'absolute',
+    transformOrigin: '50% 50%',
+    transition: transformTransition,
+  }
+
+  const backStarSvgStyle: CSSProperties = {
+    ...starMotionBase,
+    transform: `rotate(${backRotation}deg)`,
+    filter: 'drop-shadow(0 0 10px rgba(240,165,0,0.85))',
+    animation: 'pulse 1.15s ease-in-out infinite',
+  }
+
+  const frontStarSvgStyle: CSSProperties = {
+    ...starMotionBase,
+    transform: `rotate(${frontRotation}deg)`,
+    filter: 'drop-shadow(0 0 12px rgba(77,126,255,0.9))',
+    animation: 'pulse 0.95s ease-in-out infinite',
+  }
 
   return (
     <div style={shellStyle} aria-live="polite" role="status">
       <div style={textWrapStyle}>
         <div style={starStageStyle} aria-hidden="true">
-          <svg width="85" height="85" viewBox="0 0 40 40" style={{ position: 'absolute', transform: `rotate(${backRotation}deg)`, transformOrigin: '50% 50%', transition: 'transform 340ms cubic-bezier(0.22,0.61,0.36,1)', filter: 'drop-shadow(0 0 10px rgba(240,165,0,0.85))', animation: 'pulse 1.15s ease-in-out infinite' }}>
+          <svg width="100" height="100" viewBox="0 0 40 40" style={backStarSvgStyle}>
             <polygon points={starPoints} fill="rgba(240,165,0,0.9)" />
           </svg>
-          <svg width="85" height="85" viewBox="0 0 40 40" style={{ position: 'absolute', transform: `rotate(${frontRotation}deg)`, transformOrigin: '50% 50%', transition: 'transform 340ms cubic-bezier(0.22,0.61,0.36,1)', filter: 'drop-shadow(0 0 12px rgba(77,126,255,0.9))', animation: 'pulse 0.95s ease-in-out infinite' }}>
+          <svg width="100" height="100" viewBox="0 0 40 40" style={frontStarSvgStyle}>
             <polygon points={starPoints} fill="rgba(120,170,255,0.92)" />
           </svg>
         </div>
