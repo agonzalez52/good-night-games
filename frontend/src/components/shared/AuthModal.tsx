@@ -10,6 +10,7 @@ import {
   type VerifyDeliveryState,
 } from '@/lib/auth/verification-feedback'
 import { StackedStarsIcon } from '@/components/shared/StackedStarsIcon'
+import { useProductConfig } from '@/hooks/useProductConfig'
 import type { CurrentUser } from '@/lib/constants'
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
 
@@ -37,6 +38,7 @@ interface AuthModalProps {
 }
 
 export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onTokenCredit }: AuthModalProps) {
+  const { signupBonusTokens } = useProductConfig()
   const searchParams = useSearchParams()
   const [mode, setMode] = useState<AuthModalMode>(initialMode)
   const [signinMethod, setSigninMethod] = useState<'password' | 'magic'>('password')
@@ -608,7 +610,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
                   ))}
                   <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.6, paddingLeft: 32 }}>
                     You&apos;ll be brought straight back here with your{' '}
-                    <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>4 free tokens</span>{' '}
+                    <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>{signupBonusTokens} free tokens</span>{' '}
                     already in your account.
                   </div>
                 </div>
@@ -620,7 +622,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
                   {verifyMessage || 'Could not send signup email right now. Try resend or continue and verify later.'}
                 </div>
                 <div style={{ marginTop: 10, fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.6 }}>
-                  You can still play now. Use resend below to unlock your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+                  You can still play now. Use resend below to unlock your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>{signupBonusTokens} signup tokens</span>.
                 </div>
               </div>
             )}
@@ -632,7 +634,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
             {/* MOCK MODE ONLY — gated behind NEXT_PUBLIC_MOCK_MODE */}
             {isMockMode && (
               <button
-                onClick={() => { onTokenCredit(4); onClose() }}
+                onClick={() => { onTokenCredit(signupBonusTokens); onClose() }}
                 style={{ width: '100%', padding: '13px', borderRadius: 12, background: 'linear-gradient(135deg,#F0A500,#C07A00)', color: '#fff', fontFamily: 'var(--font-display)', fontSize: 14, letterSpacing: '0.08em', border: 'none', boxShadow: '0 4px 18px rgba(240,165,0,0.3)' }}>
                 🧪 SIMULATE EMAIL LINK CLICK
               </button>
@@ -676,7 +678,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
             {/* MOCK MODE ONLY — simulates the magic link click; remove when Supabase auth is wired */}
             {isMockMode && (
               <button
-                onClick={() => { onAuth({ id: 'mock-user-001', email, username: email.split('@')[0], tokenBalance: 4, emailVerified: true, referralsClaimed: 0 }); onClose() }}
+                onClick={() => { onAuth({ id: 'mock-user-001', email, username: email.split('@')[0], tokenBalance: signupBonusTokens, emailVerified: true, referralsClaimed: 0 }); onClose() }}
                 style={{ width: '100%', padding: '13px', borderRadius: 12, background: 'linear-gradient(135deg,#4D7EFF,#2952CC)', color: '#fff', fontFamily: 'var(--font-display)', fontSize: 14, letterSpacing: '0.08em', border: 'none', boxShadow: '0 4px 18px rgba(77,126,255,0.3)', marginBottom: 10 }}>
                 🧪 SIMULATE EMAIL LINK CLICK
               </button>

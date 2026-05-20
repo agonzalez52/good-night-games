@@ -19,6 +19,10 @@ import {
   getReferralData,
   type ReferralDataResponse,
 } from '@/lib/api/referrals'
+import {
+  DEFAULT_SIGNUP_BONUS_TOKENS,
+  getProductConfig,
+} from '@/lib/api/config'
 import { getTokenBundles } from '@/lib/api/tokens'
 import { useTokenBalance } from '@/hooks/useTokenBalance'
 
@@ -48,6 +52,8 @@ async function consumeImplicitGrantHash(supabase: SupabaseClient): Promise<void>
 export type AuthContextValue = {
   currentUser: CurrentUser | null
   loading: boolean
+  /** From GET /api/config; defaults to 4 until fetch completes or on failure. */
+  signupBonusTokens: number
   /** GET /api/referrals snapshot for `currentUser.id`; null if missing or user switched. */
   referralSnapshot: ReferralDataResponse | null
   revalidateReferralSnapshot: () => Promise<void>
@@ -111,6 +117,7 @@ function clearOAuthSignupParam(): void {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const [signupBonusTokens, setSignupBonusTokens] = useState(DEFAULT_SIGNUP_BONUS_TOKENS)
   const [referralCache, setReferralCache] = useState<{
     userId: string
     data: ReferralDataResponse
@@ -190,6 +197,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setReferralCache({ userId: uid, data })
     } catch {
       // leave existing cache; modal may show stale-while-revalidate
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void getProductConfig().then(config => {
+      if (!cancelled) setSignupBonusTokens(config.signupBonusTokens)
+    })
+    return () => {
+      cancelled = true
     }
   }, [])
 
@@ -356,6 +373,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       currentUser,
       loading,
+      signupBonusTokens,
       referralSnapshot,
       revalidateReferralSnapshot,
       updateTokenBalance,
@@ -367,6 +385,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       currentUser,
       loading,
+      signupBonusTokens,
       referralSnapshot,
       revalidateReferralSnapshot,
       updateTokenBalance,

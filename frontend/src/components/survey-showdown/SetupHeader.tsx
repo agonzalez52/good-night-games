@@ -14,6 +14,7 @@ import {
   VERIFY_DELIVERY_STATE,
   type VerifyDeliveryState,
 } from '@/lib/auth/verification-feedback'
+import { useProductConfig } from '@/hooks/useProductConfig'
 
 const isMockMode = process.env.NEXT_PUBLIC_MOCK_MODE === 'true'
 
@@ -24,6 +25,7 @@ interface VerificationBannerProps {
 }
 
 export function VerificationBanner({ email, onClaim }: VerificationBannerProps) {
+  const { signupBonusTokens } = useProductConfig()
   const [dismissed, setDismissed] = useState(false)
   const [claimed, setClaimed] = useState(false)
   const [isSending, setIsSending] = useState(false)
@@ -76,16 +78,16 @@ export function VerificationBanner({ email, onClaim }: VerificationBannerProps) 
         <span style={{ fontSize: 16, flexShrink: 0 }}>📧</span>
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', minWidth: 0 }}>
           {claimed
-            ? <span style={{ color: '#0FD98A' }}>✓ Tokens secured! <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 free tokens</span> have been added to your account.</span>
+            ? <span style={{ color: '#0FD98A' }}>✓ Tokens secured! <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>{signupBonusTokens} free tokens</span> have been added to your account.</span>
             : deliveryState === VERIFY_DELIVERY_STATE.TARGETED_FAILURE ? (
               <span>
                 We could not verify delivery for <span style={{ color: 'var(--text)' }}>{email}</span>. Use a different email provider to unlock your{' '}
-                <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+                <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>{signupBonusTokens} signup tokens</span>.
               </span>
             ) : deliveryState === VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE ? (
               <span>
                 Signup email could not be sent right now. You can keep playing and retry to unlock your{' '}
-                <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+                <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>{signupBonusTokens} signup tokens</span>.
               </span>
             ) : (
               <span>
@@ -268,7 +270,7 @@ export function HowToPlayModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 8, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>✕</button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'linear-gradient(135deg,rgba(77,126,255,0.1),rgba(77,126,255,0.05))', border: '1px solid rgba(77,126,255,0.3)', marginBottom: 18 }}>
-          <StackedStarsIcon size={22} style={{ flexShrink: 0 }} />
+          <StackedStarsIcon size={65} style={{ flexShrink: 0 }} />
           <div>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', color: '#4D7EFF', marginBottom: 2 }}>AI-POWERED JUDGING</div>
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>An AI judge handles all answer checking — synonyms, close matches, and everything in between. Everyone plays. No one sits out to host.</div>
@@ -300,11 +302,12 @@ interface ConversionModalProps {
 }
 
 export function ConversionModal({ reason, onClose, onSignUp, onSignIn }: ConversionModalProps) {
+  const { signupBonusTokens } = useProductConfig()
   const isPremium = reason === 'premium'
   const headline = isPremium ? 'Unlock the full game' : 'That was just the warm-up'
   const sub = isPremium ? 'Sign up free and start playing premium packs in seconds.' : 'Create a free account to unlock everything — and keep the fun going.'
   const benefits = [
-    { icon: '🎟', title: '4 Free Tokens', desc: 'Yours on signup. No card required.', highlight: true },
+    { icon: '🎟', title: `${signupBonusTokens} Free Tokens`, desc: 'Yours on signup. No card required.', highlight: true },
     { icon: <StackedStarsIcon size={20} />, title: 'AI-Powered Judging', desc: 'No host required so everyone can play.' },
     { icon: '✏', title: 'Custom Surveys', desc: 'Create custom surveys and collections for personalized fun.' },
     { icon: '🚫', title: 'Ad-Free Gameplay', desc: 'No interruptions. Just the game.' },
@@ -318,7 +321,7 @@ export function ConversionModal({ reason, onClose, onSignUp, onSignIn }: Convers
         <div style={{ padding: '32px 32px 20px', textAlign: 'center', background: 'radial-gradient(ellipse 80% 60% at 50% -10%, rgba(240,165,0,0.1) 0%, transparent 70%)' }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 18px', borderRadius: 100, background: 'linear-gradient(135deg,rgba(240,165,0,0.2),rgba(192,122,0,0.12))', border: '1px solid rgba(240,165,0,0.45)', marginBottom: 16, boxShadow: '0 0 28px rgba(240,165,0,0.18)' }}>
             <TokenSVG size={18} />
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '0.08em', color: '#F0A500' }}>4 FREE TOKENS ON SIGN UP</span>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '0.08em', color: '#F0A500' }}>{signupBonusTokens} FREE TOKENS ON SIGN UP</span>
           </div>
           <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(26px,5vw,36px)', color: 'var(--text)', letterSpacing: '-0.01em', lineHeight: 1.1, marginBottom: 10 }}>{headline}</div>
           <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: 340, margin: '0 auto' }}>{sub}</div>
@@ -333,7 +336,7 @@ export function ConversionModal({ reason, onClose, onSignUp, onSignIn }: Convers
               </div>
               {highlight && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, alignSelf: 'center' }}>
-                  <span style={{ fontFamily: 'var(--font-score)', fontSize: 30, color: '#F0A500', lineHeight: 1 }}>4</span>
+                  <span style={{ fontFamily: 'var(--font-score)', fontSize: 30, color: '#F0A500', lineHeight: 1 }}>{signupBonusTokens}</span>
                   <TokenSVG size={16} />
                 </div>
               )}
@@ -344,7 +347,7 @@ export function ConversionModal({ reason, onClose, onSignUp, onSignIn }: Convers
           <button onClick={onSignUp} style={{ width: '100%', padding: '15px', borderRadius: 14, fontSize: 16, fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '0.1em', background: 'linear-gradient(135deg,#F0A500 0%,#C07A00 100%)', color: '#fff', border: 'none', boxShadow: '0 6px 28px rgba(240,165,0,0.45),inset 0 1px 0 rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
             <span>CREATE FREE ACCOUNT</span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderLeft: '1px solid rgba(255,255,255,0.3)', paddingLeft: 10, fontSize: 13, opacity: 0.9 }}>
-              <TokenSVG size={14} /> 4 free
+              <TokenSVG size={14} /> {signupBonusTokens} free
             </span>
           </button>
           <button onClick={onClose} style={{ width: '100%', padding: '11px', borderRadius: 12, fontSize: 13, fontFamily: 'var(--font-body)', fontWeight: 500, background: 'transparent', color: 'var(--text-faint)', border: '1px solid rgba(255,255,255,0.07)', letterSpacing: '0.02em' }}>

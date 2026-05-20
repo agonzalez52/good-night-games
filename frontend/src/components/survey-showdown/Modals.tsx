@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { postFeedback, type FeedbackCategory } from '@/lib/api/feedback'
 import { getReferralData, type ReferralDataResponse } from '@/lib/api/referrals'
 import { useAuth } from '@/hooks/useAuth'
+import { useProductConfig } from '@/hooks/useProductConfig'
 import TokenSVG from '@/components/shared/TokenSVG'
 import { FEEDBACK_MESSAGE_MAX_LENGTH, type CurrentUser, type GameHistoryRecord } from '@/lib/constants'
 
@@ -187,6 +188,7 @@ interface ReferralModalProps {
 
 export function ReferralModal({ onClose, currentUser }: ReferralModalProps) {
   const { referralSnapshot, revalidateReferralSnapshot } = useAuth()
+  const { signupBonusTokens } = useProductConfig()
   const [copied, setCopied] = useState(false)
   const [fallbackReferral, setFallbackReferral] = useState<ReferralDataResponse | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -272,7 +274,7 @@ export function ReferralModal({ onClose, currentUser }: ReferralModalProps) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[
               { n: '1', text: <span>Invite up to 3 friends <strong style={{ color: 'var(--text)', fontWeight: 600 }}>using your unique link</strong> — direct signups won&apos;t count</span> },
-              { n: '2', text: <span>Each friend must <strong style={{ color: 'var(--text)', fontWeight: 600 }}>claim their 4 free signup tokens</strong></span> },
+              { n: '2', text: <span>Each friend must <strong style={{ color: 'var(--text)', fontWeight: 600 }}>claim their {signupBonusTokens} free signup tokens</strong></span> },
             ].map(({ n, text }) => (
               <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                 <div style={{ width: 20, height: 20, borderRadius: 6, background: 'rgba(15,217,138,0.12)', border: '1px solid rgba(15,217,138,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-display)', fontSize: 11, color: '#0FD98A', flexShrink: 0, marginTop: 1 }}>{n}</div>
