@@ -360,7 +360,7 @@ export default function SetupScreen({
                           zIndex: 20,
                         }}
                       >
-                        Only exact matching will be used. Sign up or sign in to enable AI judging.
+                        Only exact and cached matching will be used. Sign up or sign in to enable AI judging.
                       </div>
                     )}
                   </div>

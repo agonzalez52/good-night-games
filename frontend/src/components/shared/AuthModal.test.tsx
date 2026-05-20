@@ -96,10 +96,11 @@ describe('AuthModal signup verification handling', () => {
     await submitSignup()
 
     await waitFor(() => {
-      expect(screen.getByText(/Open the verification email for/i)).toBeTruthy()
+      expect(screen.getByText('hello@goodnightgames.app')).toBeTruthy()
+      expect(screen.getByText(/Click the redemption link/i)).toBeTruthy()
     })
     expect(
-      screen.queryByText(/Could not send verification right now\. Try resend or continue and verify later\./i),
+      screen.queryByText(/Could not send signup email right now\. Try resend or continue and verify later\./i),
     ).toBeNull()
     expect(sendSignupVerificationMock).toHaveBeenCalledWith('signup-access-token')
   })
@@ -119,11 +120,11 @@ describe('AuthModal signup verification handling', () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          'This email provider is not supported for verification rewards. Use a different email provider.',
+          'This email provider is not supported. Use a different email provider.',
         ),
       ).toBeTruthy()
     })
-    expect(screen.queryByText(/Open the verification email for/i)).toBeNull()
+    expect(screen.queryByText('hello@goodnightgames.app')).toBeNull()
   })
 
   it('shows catch-all guidance for unknown failures and avoids sent-email copy', async () => {
@@ -141,10 +142,10 @@ describe('AuthModal signup verification handling', () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          'Could not send verification right now. Try resend or continue and verify later.',
+          'Could not send signup email right now. Try resend or continue and verify later.',
         ),
       ).toBeTruthy()
     })
-    expect(screen.queryByText(/Open the verification email for/i)).toBeNull()
+    expect(screen.queryByText('hello@goodnightgames.app')).toBeNull()
   })
 })

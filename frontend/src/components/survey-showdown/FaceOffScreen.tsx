@@ -3,14 +3,13 @@
 import { useState, useEffect, useRef } from 'react'
 import GameMenu from '@/components/survey-showdown/GameMenu'
 import { AdBanner } from '@/components/survey-showdown/AdBanner'
-import { AIJudgeThinkingIndicator, AI_JUDGE_ANIMATION_VARIANTS } from '@/components/survey-showdown/AIJudgeThinkingIndicator'
+import { AIJudgeThinkingIndicator } from '@/components/survey-showdown/AIJudgeThinkingIndicator'
 import { judgeAnswer, playBuzzerIn, playReveal, playBuzz, playTick, playTimerExpire, SURVEY_SHOWDOWN_ANSWER_INPUT_MAX_LENGTH } from '@/lib/constants'
 import type { SurveyQuestion } from '@/lib/constants'
 
 interface Team { name: string; score: number }
 interface GameMenuProps { timerSecs: number; onTimerChange: (s: number) => void; onNewGame: () => void }
 const MIN_JUDGE_FEEDBACK_MS = 520
-const AI_JUDGE_VARIANT = AI_JUDGE_ANIMATION_VARIANTS.neuralBrain
 
 function ScoreBoard({ teams, activeTeam }: { teams: Team[]; activeTeam: number | null }) {
   return (
@@ -185,7 +184,7 @@ export default function FaceOffScreen({ currentQuestion, teams, onWinFaceOff, ro
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, width: 'min(560px,90vw)', animation: 'slideUp 0.3s ease-out', position: 'relative', zIndex: 1 }}>
           {showAiJudgeIndicator && (
             <div style={{ width: '100%', marginBottom: 18 }}>
-              <AIJudgeThinkingIndicator variant={AI_JUDGE_VARIANT} />
+              <AIJudgeThinkingIndicator starTimeBeforeFirstRotationMs={200} />
             </div>
           )}
           <div style={{ display: 'flex', gap: 9, width: '100%' }}>

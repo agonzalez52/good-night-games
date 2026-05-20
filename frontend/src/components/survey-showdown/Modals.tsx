@@ -272,18 +272,16 @@ export function ReferralModal({ onClose, currentUser }: ReferralModalProps) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[
               { n: '1', text: <span>Invite up to 3 friends <strong style={{ color: 'var(--text)', fontWeight: 600 }}>using your unique link</strong> — direct signups won&apos;t count</span> },
-              { n: '2', text: <span>Each friend must <strong style={{ color: 'var(--text)', fontWeight: 600 }}>claim their 4 free signup tokens</strong> (verify email)</span> },
+              { n: '2', text: <span>Each friend must <strong style={{ color: 'var(--text)', fontWeight: 600 }}>claim their 4 free signup tokens</strong></span> },
             ].map(({ n, text }) => (
               <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                 <div style={{ width: 20, height: 20, borderRadius: 6, background: 'rgba(15,217,138,0.12)', border: '1px solid rgba(15,217,138,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-display)', fontSize: 11, color: '#0FD98A', flexShrink: 0, marginTop: 1 }}>{n}</div>
                 <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55, paddingTop: 2 }}>{text}</div>
               </div>
             ))}
-            <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              When that happens, <strong style={{ color: '#0FD98A', fontWeight: 600 }}>you and your friend</strong> each get{' '}
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <strong style={{ color: '#0FD98A', fontWeight: 600 }}>2</strong> <TokenSVG size={14} />
-              </span>
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55, marginTop: 2 }}>
+              You and your friend will then automatically receive{' '}
+              <span style={{ color: '#0FD98A', fontWeight: 600 }}>2 tokens</span> per successful referral
             </div>
           </div>
         </div>
