@@ -20,7 +20,7 @@ interface VerificationFailureFeedback {
 }
 
 const FALLBACK_FAILURE_MESSAGE =
-  'Could not send verification right now. Try resend or continue and verify later.'
+  'Could not send signup email right now. Try resend or continue and verify later.'
 
 export const getVerificationFailureFeedback = (error: unknown): VerificationFailureFeedback => {
   if (!(error instanceof AuthApiError) || !error.errorCategory) {
@@ -34,7 +34,7 @@ export const getVerificationFailureFeedback = (error: unknown): VerificationFail
     return {
       category: error.errorCategory,
       state: VERIFY_DELIVERY_STATE.TARGETED_FAILURE,
-      message: 'This email provider is not supported for verification rewards. Use a different email provider.',
+      message: 'This email provider is not supported. Use a different email provider.',
     }
   }
 
@@ -45,7 +45,7 @@ export const getVerificationFailureFeedback = (error: unknown): VerificationFail
     return {
       category: error.errorCategory,
       state: VERIFY_DELIVERY_STATE.TARGETED_FAILURE,
-      message: 'Verification email is temporarily unavailable. Try resend in a minute.',
+      message: 'An error occurred while sending email. Try resend in a minute.',
     }
   }
 

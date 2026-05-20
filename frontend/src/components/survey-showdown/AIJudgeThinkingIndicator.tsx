@@ -13,7 +13,7 @@ const MIN_STAR_STEP_INTERVAL_MS = 1
 const STAR_TRANSFORM_EASING = 'cubic-bezier(0.22,0.61,0.36,1)'
 
 /** Overall size vs original layout (stars, brain, label, glow blur). */
-const INDICATOR_SCALE = 1.5
+const INDICATOR_SCALE = 1.35
 
 export interface AIJudgeThinkingIndicatorProps {
   /** Degrees the front star advances each step (back star moves the opposite way). Default 45. */

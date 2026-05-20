@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import TokenSVG from '@/components/shared/TokenSVG'
+import { StackedStarsIcon } from '@/components/shared/StackedStarsIcon'
 import AuthModal from '@/components/shared/AuthModal'
 import type { CurrentUser, CustomSurvey, CustomCollection } from '@/lib/constants'
 import type { SurveyPackFreeListItem, SurveyPackPremiumListItem, SurveyPackTag } from '@/lib/api/survey-showdown/survey-packs'
@@ -40,7 +41,7 @@ export function VerificationBanner({ email, onClaim }: VerificationBannerProps) 
       const accessToken = data.session?.access_token
       if (!accessToken) {
         setDeliveryState(VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE)
-        setResendMessage('Please sign in again, then resend the verification email.')
+        setResendMessage('Please sign in again, then click to resend your signup email.')
         setResendError(true)
         return
       }
@@ -48,16 +49,16 @@ export function VerificationBanner({ email, onClaim }: VerificationBannerProps) 
       if (result.alreadyVerified) {
         setDeliveryState(VERIFY_DELIVERY_STATE.SENT)
         setClaimed(true)
-        setResendMessage('Email already verified. Signup bonus is already available on this account.')
+        setResendMessage('Signup bonus is already available on this account.')
         return
       }
       if (result.sent) {
         setDeliveryState(VERIFY_DELIVERY_STATE.SENT)
-        setResendMessage('Verification email sent. Check your inbox and spam folder.')
+        setResendMessage('Signup email sent. Check your inbox and spam folder.')
         return
       }
       setDeliveryState(VERIFY_DELIVERY_STATE.SENT)
-      setResendMessage('A verification email was already sent recently. Please check your inbox.')
+      setResendMessage('Your signup email was already sent recently. Please check your inbox.')
     } catch (verificationError) {
       const feedback = getVerificationFailureFeedback(verificationError)
       setDeliveryState(feedback.state)
@@ -75,7 +76,7 @@ export function VerificationBanner({ email, onClaim }: VerificationBannerProps) 
         <span style={{ fontSize: 16, flexShrink: 0 }}>📧</span>
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', minWidth: 0 }}>
           {claimed
-            ? <span style={{ color: '#0FD98A' }}>✓ Email confirmed! <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 free tokens</span> added to your account.</span>
+            ? <span style={{ color: '#0FD98A' }}>✓ Tokens secured! <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 free tokens</span> have been added to your account.</span>
             : deliveryState === VERIFY_DELIVERY_STATE.TARGETED_FAILURE ? (
               <span>
                 We could not verify delivery for <span style={{ color: 'var(--text)' }}>{email}</span>. Use a different email provider to unlock your{' '}
@@ -83,13 +84,12 @@ export function VerificationBanner({ email, onClaim }: VerificationBannerProps) 
               </span>
             ) : deliveryState === VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE ? (
               <span>
-                Verification email could not be sent right now. You can keep playing and retry to unlock your{' '}
+                Signup email could not be sent right now. You can keep playing and retry to unlock your{' '}
                 <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
               </span>
             ) : (
               <span>
-                Account access is unlocked. Verify <span style={{ color: 'var(--text)' }}>{email}</span> to unlock your{' '}
-                <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+                Claim your free signup tokens via email
               </span>
             )
           }
@@ -253,10 +253,10 @@ export function SurveyPackDropdown({ selectedPackId, onSelectPack, onClose, curr
 // ─── HOW TO PLAY MODAL ────────────────────────────────────────────────────────
 export function HowToPlayModal({ onClose }: { onClose: () => void }) {
   const sections = [
-    { icon: '⚡', title: 'Face-Off', body: "Each round opens with a face-off. One player from each team buzzes in first — press A (Team 1) or L (Team 2), or tap your team tile. The first to buzz in answers. Guess the #1 answer and your team controls the board. Miss, and the other team takes control." },
+    { icon: '⚡', title: 'Face-Off', body: "Each round opens with a face-off. One player from each team buzzes in first. The first to buzz in answers. Guess any correct answer before the timer runs out and your team controls the board. Miss, and the other team takes control." },
     { icon: '📋', title: 'Play the Board', body: "The controlling team guesses answers one at a time. Every correct answer earns its point value. Rack up 3 wrong answers and you're out — the other team gets one shot to steal all the points on the board with a single guess." },
     { icon: '🏆', title: 'Win the Game', body: "Points stack up across every round. Most points when the last round ends wins. Ties mean a rematch — no complaints." },
-    { icon: '💡', title: 'Good to Know', body: "• Hit ⟳ Skip Question during the face-off to swap in a different question\n• Use the ⚙️ menu mid-game to adjust the timer or end the game early\n• Add face-off prompts under My Surveys (one prompt per row)" },
+    { icon: '💡', title: 'Good to Know', body: "• Hit ⟳ Skip Question during the face-off to swap in a different question\n• Use the ⚙️ menu mid-game to adjust the timer or end the game early\n• Tap UNDO or RE-DO if you submit a guess by mistake" },
   ]
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(8px)' }}>
@@ -264,12 +264,11 @@ export function HowToPlayModal({ onClose }: { onClose: () => void }) {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 26, color: '#F0A500', letterSpacing: '0.02em' }}>How to Play</div>
-            <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>No host required.</div>
           </div>
           <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 8, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>✕</button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'linear-gradient(135deg,rgba(77,126,255,0.1),rgba(77,126,255,0.05))', border: '1px solid rgba(77,126,255,0.3)', marginBottom: 18 }}>
-          <div style={{ fontSize: 22, flexShrink: 0 }}>🤖</div>
+          <StackedStarsIcon size={22} style={{ flexShrink: 0 }} />
           <div>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', color: '#4D7EFF', marginBottom: 2 }}>AI-POWERED JUDGING</div>
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>An AI judge handles all answer checking — synonyms, close matches, and everything in between. Everyone plays. No one sits out to host.</div>
@@ -306,8 +305,8 @@ export function ConversionModal({ reason, onClose, onSignUp, onSignIn }: Convers
   const sub = isPremium ? 'Sign up free and start playing premium packs in seconds.' : 'Create a free account to unlock everything — and keep the fun going.'
   const benefits = [
     { icon: '🎟', title: '4 Free Tokens', desc: 'Yours on signup. No card required.', highlight: true },
-    { icon: '🃏', title: '6 Survey Packs', desc: 'Home Life, Food & Drink, Work Life, Game Night, and more.' },
-    { icon: '✏', title: 'Custom Surveys', desc: 'Add face-off prompts, one per survey row, and sort them into collections.' },
+    { icon: <StackedStarsIcon size={20} />, title: 'AI-Powered Judging', desc: 'No host required so everyone can play.' },
+    { icon: '✏', title: 'Custom Surveys', desc: 'Create custom surveys and collections for personalized fun.' },
     { icon: '🚫', title: 'Ad-Free Gameplay', desc: 'No interruptions. Just the game.' },
     { icon: '🎮', title: 'Game History', desc: 'Track every win across all your game nights.' },
   ]

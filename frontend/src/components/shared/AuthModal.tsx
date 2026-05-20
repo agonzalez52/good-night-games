@@ -9,7 +9,7 @@ import {
   VERIFY_DELIVERY_STATE,
   type VerifyDeliveryState,
 } from '@/lib/auth/verification-feedback'
-import TokenSVG from '@/components/shared/TokenSVG'
+import { StackedStarsIcon } from '@/components/shared/StackedStarsIcon'
 import type { CurrentUser } from '@/lib/constants'
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
 
@@ -197,11 +197,11 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
           const verificationResult = await sendSignupVerification(accessToken)
           if (verificationResult.alreadyVerified) {
             setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
-            setVerifyMessage('Email already verified. Your signup bonus is already unlocked.')
+            setVerifyMessage('Your signup bonus is already unlocked.')
             setVerifyMessageError(false)
           }
           if (!verificationResult.sent) {
-            setVerifyMessage('Verification email was already sent recently. Please check your inbox.')
+            setVerifyMessage('Signup email was already sent recently. Please check your inbox.')
           }
         } catch (verificationError) {
           const feedback = getVerificationFailureFeedback(verificationError)
@@ -211,7 +211,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
         }
       } else {
         setVerifyDeliveryState(VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE)
-        setVerifyMessage('Could not send verification right now. Try resend or continue and verify later.')
+        setVerifyMessage('Could not send signup email right now. Try resend or continue and verify later.')
         setVerifyMessageError(true)
       }
       setMode('verify')
@@ -341,25 +341,25 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
       const accessToken = data.session?.access_token
       if (!accessToken) {
         setVerifyDeliveryState(VERIFY_DELIVERY_STATE.CATCH_ALL_FAILURE)
-        setVerifyMessage('Please sign in again, then resend verification.')
+        setVerifyMessage('Please sign in again, then click to resend signup email.')
         setVerifyMessageError(true)
         return
       }
       const result = await sendSignupVerification(accessToken)
       if (result.alreadyVerified) {
         setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
-        setVerifyMessage('Email already verified. Your signup bonus is already unlocked.')
+        setVerifyMessage('Your signup bonus is already unlocked.')
         setVerifyMessageError(false)
         return
       }
       if (result.sent) {
         setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
-        setVerifyMessage('Verification email sent. Check your inbox and spam folder.')
+        setVerifyMessage('Signup email sent. Check your inbox and spam folder.')
         setVerifyMessageError(false)
         return
       }
       setVerifyDeliveryState(VERIFY_DELIVERY_STATE.SENT)
-      setVerifyMessage('Verification email was sent recently. Please check your inbox.')
+      setVerifyMessage('Signup email was sent recently. Please check your inbox.')
       setVerifyMessageError(false)
     } catch (verificationError) {
       const feedback = getVerificationFailureFeedback(verificationError)
@@ -396,7 +396,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
           <div>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: '#F0A500' }}>
-              {isVerify ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Verify to unlock free tokens <TokenSVG size={20} /></span>
+              {isVerify ? 'Claim your sign-up tokens via email'
                 : isExistingGoogle ? 'This email uses Google'
                   : isSignUp ? 'Create Account'
                     : isForgot ? 'Forgot Password'
@@ -411,7 +411,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
                   ? (googleHintFromForgot
                     ? 'This account signs in with Google — use Google to continue'
                     : 'Sign in with Google, or finish linking a password via email')
-                  : isSignUp ? 'Get instant account access. Bonus tokens unlock after email verification.'
+                  : isSignUp ? 'Sign up for free tokens and more.'
                     : isForgot ? "We'll send you a reset link"
                       : isForgotSent ? null
                         : isResetPassword ? 'Choose a new password for your account'
@@ -598,8 +598,8 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
                 You are signed in and can start playing now. To unlock your signup bonus:
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
                   {[
-                    { n: '1', text: <span>Open the verification email for <span style={{ color: 'var(--text)' }}>{email}</span></span> },
-                    { n: '2', text: <span>Tap the verification link</span> },
+                    { n: '1', text: <span>Open the email from <span style={{ color: 'var(--text)' }}>hello@goodnightgames.app</span></span> },
+                    { n: '2', text: <span>Click the redemption link</span> },
                   ].map(({ n, text }) => (
                     <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                       <div style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(240,165,0,0.15)', border: '1px solid rgba(240,165,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-display)', fontSize: 12, color: '#F0A500', flexShrink: 0, marginTop: 1 }}>{n}</div>
@@ -607,18 +607,20 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
                     </div>
                   ))}
                   <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.6, paddingLeft: 32 }}>
-                    Verification unlocks your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span> and referral rewards.
+                    You&apos;ll be brought straight back here with your{' '}
+                    <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>4 free tokens</span>{' '}
+                    already in your account.
                   </div>
                 </div>
               </div>
             ) : (
               <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: 24, textAlign: 'left' }}>
-                You are signed in and can start playing now. We could not deliver a verification email yet.
+                You are signed in and can start playing now. We could not deliver your signup bonus email yet.
                 <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, background: 'rgba(255,77,106,0.08)', border: '1px solid rgba(255,77,106,0.24)', fontSize: 12, color: '#FF8DA0', lineHeight: 1.6 }}>
-                  {verifyMessage || 'Could not send verification right now. Try resend or continue and verify later.'}
+                  {verifyMessage || 'Could not send signup email right now. Try resend or continue and verify later.'}
                 </div>
                 <div style={{ marginTop: 10, fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.6 }}>
-                  You can still play now. Use resend below and verify later to unlock your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
+                  You can still play now. Use resend below to unlock your <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>4 signup tokens</span>.
                 </div>
               </div>
             )}
@@ -636,7 +638,7 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
               </button>
             )}
             <button onClick={() => void handleResendSignupVerification()} disabled={isResendingVerification} style={{ marginTop: 10, width: '100%', padding: '11px', borderRadius: 12, background: 'rgba(77,126,255,0.18)', color: '#4D7EFF', fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', border: '1px solid rgba(77,126,255,0.35)', opacity: isResendingVerification ? 0.38 : 1 }}>
-              {isResendingVerification ? 'SENDING...' : 'RESEND VERIFICATION EMAIL'}
+              {isResendingVerification ? 'SENDING...' : 'RESEND SIGNUP EMAIL'}
             </button>
             <button onClick={onClose} style={{ marginTop: 10, width: '100%', padding: '11px', borderRadius: 12, background: 'transparent', color: 'var(--text-muted)', fontFamily: 'var(--font-body)', fontSize: 13, border: '1px solid rgba(255,255,255,0.08)' }}>
               I&apos;ll do it later
@@ -645,13 +647,13 @@ export default function AuthModal({ initialMode = 'signin', onClose, onAuth, onT
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 10, letterSpacing: '0.16em', color: 'var(--text-faint)', textTransform: 'uppercase', marginBottom: 12 }}>You also now have access to</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {[
-                  { icon: '🎮', label: 'More surveys to play' },
+                  { icon: <StackedStarsIcon size={20} />, label: 'AI-powered judging' },
                   { icon: '⬆', label: 'Import your own custom surveys' },
                   { icon: '🚫', label: 'Ad-free gameplay' },
                   { icon: '📋', label: 'Game history' },
                 ].map(({ icon, label }) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 13, width: 20, textAlign: 'center', flexShrink: 0 }}>{icon}</span>
+                    <span style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</span>
                     <span style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--text-faint)' }}>{label}</span>
                   </div>
                 ))}
