@@ -268,7 +268,7 @@ export function HowToPlayModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 8, fontSize: 18, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>✕</button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'linear-gradient(135deg,rgba(77,126,255,0.1),rgba(77,126,255,0.05))', border: '1px solid rgba(77,126,255,0.3)', marginBottom: 18 }}>
-          <StackedStarsIcon size={22} style={{ flexShrink: 0 }} />
+          <StackedStarsIcon size={65} style={{ flexShrink: 0 }} />
           <div>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', color: '#4D7EFF', marginBottom: 2 }}>AI-POWERED JUDGING</div>
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>An AI judge handles all answer checking — synonyms, close matches, and everything in between. Everyone plays. No one sits out to host.</div>
