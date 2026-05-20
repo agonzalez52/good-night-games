@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { Hono } from 'hono'
 
 const { prismaMock, supabaseAuthMock, sendEmailMock } = vi.hoisted(() => ({
@@ -53,9 +53,20 @@ vi.mock('../lib/email', () => ({
   sendEmail: sendEmailMock,
 }))
 
+import { getSignupBonusTokens, resetSignupBonusTokensCacheForTests } from '../lib/config'
 import authRoutes from './auth'
 
-const FREE_SIGNUP_TOKENS = 4
+const DEFAULT_TEST_SIGNUP_BONUS = '4'
+
+const setupSignupBonusEnv = (tokens = DEFAULT_TEST_SIGNUP_BONUS): void => {
+  process.env.SIGNUP_BONUS_TOKENS = tokens
+  resetSignupBonusTokensCacheForTests()
+}
+
+const teardownSignupBonusEnv = (): void => {
+  delete process.env.SIGNUP_BONUS_TOKENS
+  resetSignupBonusTokensCacheForTests()
+}
 const SIGNUP_BONUS_BUNDLE_ID = 'email_verification_bonus'
 const REFERRAL_CLAIM_BUNDLE_ID = 'referral_claim_bonus'
 
@@ -141,7 +152,12 @@ const wireConfirmFlowMocks = (state: VerificationState): void => {
 
 describe('POST /api/auth/confirm-signup-verification', () => {
   beforeEach(() => {
+    setupSignupBonusEnv()
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    teardownSignupBonusEnv()
   })
 
   it('is idempotent when verification link is clicked multiple times', async () => {
@@ -178,7 +194,7 @@ describe('POST /api/auth/confirm-signup-verification', () => {
       verified: true,
       alreadyCredited: false,
       email_verified: true,
-      balance: FREE_SIGNUP_TOKENS,
+      balance: getSignupBonusTokens(),
     })
 
     const second = await app.request('/api/auth/confirm-signup-verification', {
@@ -192,10 +208,10 @@ describe('POST /api/auth/confirm-signup-verification', () => {
       verified: true,
       alreadyCredited: true,
       email_verified: true,
-      balance: FREE_SIGNUP_TOKENS,
+      balance: getSignupBonusTokens(),
     })
 
-    expect(state.balance).toBe(FREE_SIGNUP_TOKENS)
+    expect(state.balance).toBe(getSignupBonusTokens())
     expect(state.user.email_verified).toBe(true)
     expect(state.user.signup_tokens_credited).toBe(true)
     expect(state.purchases).toBe(1)
@@ -232,11 +248,56 @@ describe('POST /api/auth/confirm-signup-verification', () => {
     expect(state.user.email_verified).toBe(false)
     expect(state.user.signup_tokens_credited).toBe(false)
   })
+
+  it('credits tokens from SIGNUP_BONUS_TOKENS env', async () => {
+    setupSignupBonusEnv('7')
+    const challenge = 'challenge_token_for_signup_verification_123456'
+    const state: VerificationState = {
+      user: { id: 'user_1', email_verified: false, signup_tokens_credited: false },
+      challenge: {
+        id: 'challenge_1',
+        user_id: 'user_1',
+        token_hash: sha256(challenge),
+        expires_at: new Date(Date.now() + 60_000),
+        used_at: null,
+      },
+      balance: 0,
+      purchases: 0,
+    }
+
+    wireConfirmFlowMocks(state)
+    prismaMock.signup_verification_challenges.findFirst.mockImplementation(async ({ where }: { where: { token_hash: string } }) => {
+      if (where.token_hash !== state.challenge.token_hash) return null
+      return state.challenge
+    })
+
+    const app = makeApp()
+    const res = await app.request('/api/auth/confirm-signup-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challenge }),
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      success: true,
+      verified: true,
+      alreadyCredited: false,
+      balance: 7,
+    })
+    expect(state.balance).toBe(7)
+    expect(getSignupBonusTokens()).toBe(7)
+  })
 })
 
 describe('POST /api/auth/send-signup-verification', () => {
   beforeEach(() => {
+    setupSignupBonusEnv()
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    teardownSignupBonusEnv()
   })
 
   it('sends callback link preserving verify_signup and challenge params', async () => {
@@ -282,7 +343,7 @@ describe('POST /api/auth/send-signup-verification', () => {
     }
     expect(payload.templateId).toBe('6cedbceb-8deb-416b-aa85-6c537d5e0696')
     expect(payload.variables?.APP_NAME).toBe('Survey Showdown')
-    expect(payload.variables?.TOKEN_COUNT).toBe('4')
+    expect(payload.variables?.TOKEN_COUNT).toBe(String(getSignupBonusTokens()))
     expect(payload.variables?.VERIFY_URL).toBeTruthy()
 
     const verifyUrl = new URL(payload.variables!.VERIFY_URL!)
@@ -294,6 +355,38 @@ describe('POST /api/auth/send-signup-verification', () => {
     expect(callbackUrl.searchParams.get('next')).toBe('/survey-showdown')
     expect(callbackUrl.searchParams.get('verify_signup')).toBe('1')
     expect(callbackUrl.searchParams.get('challenge')?.length ?? 0).toBeGreaterThanOrEqual(10)
+  })
+
+  it('includes TOKEN_COUNT from SIGNUP_BONUS_TOKENS env in verification email', async () => {
+    setupSignupBonusEnv('7')
+    prismaMock.users.findUnique.mockResolvedValue({
+      email: 'player@example.com',
+      email_verified: false,
+      signup_tokens_credited: false,
+    })
+    prismaMock.signup_verification_challenges.create.mockResolvedValue({ id: 'challenge_1' })
+    prismaMock.signup_verification_challenges.deleteMany.mockResolvedValue({ count: 0 })
+    supabaseAuthMock.admin.generateLink.mockResolvedValue({
+      data: {
+        properties: {
+          action_link: 'https://example-project.supabase.co/auth/v1/verify?token=abc&type=magiclink',
+        },
+      },
+      error: null,
+    })
+    sendEmailMock.mockResolvedValue(undefined)
+
+    const app = makeApp()
+    const res = await app.request('/api/auth/send-signup-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    expect(res.status).toBe(200)
+    const payload = sendEmailMock.mock.calls[0]?.[0] as {
+      variables?: { TOKEN_COUNT?: string }
+    }
+    expect(payload.variables?.TOKEN_COUNT).toBe('7')
   })
 
   it('rolls back fresh challenge when email send fails', async () => {
@@ -338,7 +431,7 @@ describe('POST /api/auth/send-signup-verification', () => {
     expect(payload.templateId).toBe('6cedbceb-8deb-416b-aa85-6c537d5e0696')
     expect(payload.variables).toMatchObject({
       APP_NAME: 'Survey Showdown',
-      TOKEN_COUNT: '4',
+      TOKEN_COUNT: String(getSignupBonusTokens()),
       VERIFY_URL: generatedActionLink,
     })
     expect(prismaMock.signup_verification_challenges.deleteMany).toHaveBeenCalledTimes(1)
@@ -457,7 +550,12 @@ describe('POST /api/auth/send-signup-verification', () => {
 
 describe('POST /api/auth/confirm-oauth-signup', () => {
   beforeEach(() => {
+    setupSignupBonusEnv()
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    teardownSignupBonusEnv()
   })
 
   const wireGoogleOauthBonusMocks = () => {
@@ -533,9 +631,9 @@ describe('POST /api/auth/confirm-oauth-signup', () => {
       verified: true,
       alreadyCredited: false,
       email_verified: true,
-      balance: FREE_SIGNUP_TOKENS,
+      balance: getSignupBonusTokens(),
     })
-    expect(state.balance).toBe(FREE_SIGNUP_TOKENS)
+    expect(state.balance).toBe(getSignupBonusTokens())
     expect(state.isEmailVerified).toBe(true)
     expect(state.isSignupTokensCredited).toBe(true)
     expect(state.purchases).toBe(1)
@@ -558,7 +656,7 @@ describe('POST /api/auth/confirm-oauth-signup', () => {
       verified: true,
       alreadyCredited: false,
       email_verified: true,
-      balance: FREE_SIGNUP_TOKENS,
+      balance: getSignupBonusTokens(),
     })
 
     const second = await app.request('/api/auth/confirm-oauth-signup', {
@@ -571,10 +669,10 @@ describe('POST /api/auth/confirm-oauth-signup', () => {
       verified: true,
       alreadyCredited: true,
       email_verified: true,
-      balance: FREE_SIGNUP_TOKENS,
+      balance: getSignupBonusTokens(),
     })
 
-    expect(state.balance).toBe(FREE_SIGNUP_TOKENS)
+    expect(state.balance).toBe(getSignupBonusTokens())
     expect(state.isEmailVerified).toBe(true)
     expect(state.isSignupTokensCredited).toBe(true)
     expect(state.purchases).toBe(1)

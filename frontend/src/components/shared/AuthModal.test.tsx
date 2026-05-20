@@ -43,6 +43,10 @@ vi.mock('@/lib/api/auth', async () => {
   }
 })
 
+vi.mock('@/hooks/useProductConfig', () => ({
+  useProductConfig: () => ({ signupBonusTokens: 4 }),
+}))
+
 const onCloseMock = vi.fn()
 const onAuthMock = vi.fn()
 const onTokenCreditMock = vi.fn()

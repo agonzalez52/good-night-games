@@ -6,15 +6,14 @@ import { prisma } from '../lib/prisma'
 import { sendEmail } from '../lib/email'
 import { supabaseAdmin } from '../lib/supabase'
 import { confirmSignupVerificationSchema, signupProviderHintSchema } from '../schemas/zod'
+import { getSignupBonusTokens } from '../lib/config'
 
-const FREE_SIGNUP_TOKENS = 4
 /** Not a Stripe id — purchase row for analytics; one row per user via atomic claim below. */
 const SIGNUP_BONUS_BUNDLE_ID = 'email_verification_bonus'
 const SIGNUP_VERIFY_NEXT_PATH = '/survey-showdown'
 const SIGNUP_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000
 const SIGNUP_VERIFICATION_EMAIL_TEMPLATE_ID = '6cedbceb-8deb-416b-aa85-6c537d5e0696'
 const SIGNUP_VERIFICATION_APP_NAME = 'Survey Showdown'
-const SIGNUP_VERIFICATION_TOKEN_COUNT = '4'
 const SIGNUP_VERIFICATION_SEND_ERROR = 'Could not send verification email'
 
 const SIGNUP_VERIFICATION_FAILURE_CATEGORIES = {
@@ -178,16 +177,18 @@ async function claimSignupVerificationBonus(
     return { credited: false, balance: tokenRecord?.balance ?? 0 }
   }
 
+  const signupBonusTokens = getSignupBonusTokens()
+
   const updated = await tx.user_tokens.upsert({
     where: { user_id: userId },
     update: {
-      balance: { increment: FREE_SIGNUP_TOKENS },
-      lifetime_purchased: { increment: FREE_SIGNUP_TOKENS },
+      balance: { increment: signupBonusTokens },
+      lifetime_purchased: { increment: signupBonusTokens },
     },
     create: {
       user_id: userId,
-      balance: FREE_SIGNUP_TOKENS,
-      lifetime_purchased: FREE_SIGNUP_TOKENS,
+      balance: signupBonusTokens,
+      lifetime_purchased: signupBonusTokens,
       lifetime_spent: 0,
     },
   })
@@ -198,7 +199,7 @@ async function claimSignupVerificationBonus(
       stripe_checkout_session_id: `email_verification:${userId}`,
       stripe_payment_intent_id: null,
       bundle_id: SIGNUP_BONUS_BUNDLE_ID,
-      tokens_purchased: FREE_SIGNUP_TOKENS,
+      tokens_purchased: signupBonusTokens,
       amount_paid_cents: 0,
       status: 'COMPLETED'
     },
@@ -284,7 +285,7 @@ auth.post('/send-signup-verification', requireAuth, async (c) => {
         templateId: SIGNUP_VERIFICATION_EMAIL_TEMPLATE_ID,
         variables: {
           APP_NAME: SIGNUP_VERIFICATION_APP_NAME,
-          TOKEN_COUNT: SIGNUP_VERIFICATION_TOKEN_COUNT,
+          TOKEN_COUNT: String(getSignupBonusTokens()),
           VERIFY_URL: verificationUrl,
         },
       })

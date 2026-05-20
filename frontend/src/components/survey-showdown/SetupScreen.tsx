@@ -12,6 +12,7 @@ import { FeedbackModal, ReferralModal, GameHistoryModal } from '@/components/sur
 import CustomSurveysModal from '@/components/survey-showdown/CustomSurveysModal'
 import AuthModal from '@/components/shared/AuthModal'
 import TokenSVG from '@/components/shared/TokenSVG'
+import { useProductConfig } from '@/hooks/useProductConfig'
 import { TOKENS_PER_GAME } from '@/lib/constants'
 import type { CurrentUser, CustomSurvey, CustomCollection, SurveyQuestion, GameHistoryRecord } from '@/lib/constants'
 import type { SurveyPackFreeListItem, SurveyPackPremiumListItem } from '@/lib/api/survey-showdown/survey-packs'
@@ -69,6 +70,7 @@ export default function SetupScreen({
   onSaveCollection, onDeleteCollection, onCloseSurveys,
   gameHistory,
 }: SetupScreenProps) {
+  const { signupBonusTokens } = useProductConfig()
   const [team1, setTeam1] = useState('TEAM 1')
   const [team2, setTeam2] = useState('TEAM 2')
   const [timerSecs, setTimerSecs] = useState(5)
@@ -142,7 +144,12 @@ export default function SetupScreen({
           onOpenReferral={() => setShowReferral(true)}
           onOpenGameHistory={() => setShowHistory(true)}
         />
-        {showVerifyBanner && <VerificationBanner email={currentUser.email} onClaim={() => onTokensUpdated((currentUser.tokenBalance || 0) + 4)} />}
+        {showVerifyBanner && (
+          <VerificationBanner
+            email={currentUser.email}
+            onClaim={() => onTokensUpdated((currentUser.tokenBalance || 0) + signupBonusTokens)}
+          />
+        )}
       </div>
 
       {/* Main content */}
