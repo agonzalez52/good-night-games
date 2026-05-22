@@ -2,7 +2,6 @@ import { customSurveyAnswerId, postJudge } from "@/lib/api/survey-showdown/judge
 import type { JudgeAnswerOutcome } from "@/lib/api/survey-showdown/judge-contract";
 
 // ─── TOKENS ───────────────────────────────────────────────────────────────────
-export const TOKENS_PER_GAME = 2;
 export const MAX_CUSTOM_SURVEYS = 40;
 export const MAX_CUSTOM_COLLECTIONS = 20;
 export const CUSTOM_SURVEY_NAME_MAX_LENGTH = 100;

@@ -4,7 +4,7 @@ const CUSTOM_SURVEY_QUESTION_MAX_LENGTH = 200
 const CUSTOM_SURVEY_ANSWER_MAX_LENGTH = 100
 
 export const spendTokensSchema = z.object({
-  amount: z.number().int().positive(),
+  game_id: z.string().min(1),
 })
 
 /** POST /api/tokens/purchase — `bundleId` is token_bundles.id */

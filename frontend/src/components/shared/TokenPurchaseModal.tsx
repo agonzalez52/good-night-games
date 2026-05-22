@@ -4,7 +4,6 @@ import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from 'rea
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import { loadStripe } from '@stripe/stripe-js'
 import TokenSVG from '@/components/shared/TokenSVG'
-import { TOKENS_PER_GAME } from '@/lib/constants'
 import {
   createPurchaseIntent,
   getAccessToken,
@@ -172,9 +171,10 @@ interface TokenPurchaseModalProps {
   /** Called after Stripe confirms payment and balance reflects the webhook credit. */
   onPurchase: (tokenAmount: number, newBalance: number) => void
   currentBalance: number
+  tokensPerGame: number
 }
 
-export default function TokenPurchaseModal({ onClose, onPurchase, currentBalance }: TokenPurchaseModalProps) {
+export default function TokenPurchaseModal({ onClose, onPurchase, currentBalance, tokensPerGame }: TokenPurchaseModalProps) {
   const [bundles, setBundles] = useState<TokenBundle[]>([])
   const [bundlesLoading, setBundlesLoading] = useState(true)
   const [bundlesError, setBundlesError] = useState<string | null>(null)
@@ -288,7 +288,7 @@ export default function TokenPurchaseModal({ onClose, onPurchase, currentBalance
               <TokenSVG size={22} />
             </div>
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
-              Each game costs {TOKENS_PER_GAME} tokens. Current balance:
+              Each game costs {tokensPerGame} tokens. Current balance:
               {' '}
               <span style={{ color: '#F0A500', fontFamily: 'var(--font-display)' }}>{currentBalance}</span>
             </div>

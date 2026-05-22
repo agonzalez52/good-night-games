@@ -122,6 +122,15 @@ model game_sessions {
   metadata  Json?
 }
 
+model game_config {
+  game_id         String   @id
+  game_name       String
+  tokens_per_game Int
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+}
+
 model signup_verification_challenges {
   id         String   @id @default(uuid())
   user_id    String

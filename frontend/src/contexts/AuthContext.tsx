@@ -22,6 +22,7 @@ import {
 import {
   DEFAULT_SIGNUP_BONUS_TOKENS,
   getProductConfig,
+  type GameConfigPayload,
 } from '@/lib/api/config'
 import { getTokenBundles } from '@/lib/api/tokens'
 import { useTokenBalance } from '@/hooks/useTokenBalance'
@@ -54,6 +55,8 @@ export type AuthContextValue = {
   loading: boolean
   /** From GET /api/config; defaults to 4 until fetch completes or on failure. */
   signupBonusTokens: number
+  /** Per-game economy/metadata from GET /api/config; empty until fetch completes. */
+  games: Record<string, GameConfigPayload>
   /** GET /api/referrals snapshot for `currentUser.id`; null if missing or user switched. */
   referralSnapshot: ReferralDataResponse | null
   revalidateReferralSnapshot: () => Promise<void>
@@ -118,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [signupBonusTokens, setSignupBonusTokens] = useState(DEFAULT_SIGNUP_BONUS_TOKENS)
+  const [games, setGames] = useState<Record<string, GameConfigPayload>>({})
   const [referralCache, setReferralCache] = useState<{
     userId: string
     data: ReferralDataResponse
@@ -203,7 +207,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false
     void getProductConfig().then(config => {
-      if (!cancelled) setSignupBonusTokens(config.signupBonusTokens)
+      if (!cancelled) {
+        setSignupBonusTokens(config.signupBonusTokens)
+        setGames(config.games)
+      }
     })
     return () => {
       cancelled = true
@@ -374,6 +381,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentUser,
       loading,
       signupBonusTokens,
+      games,
       referralSnapshot,
       revalidateReferralSnapshot,
       updateTokenBalance,
@@ -386,6 +394,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentUser,
       loading,
       signupBonusTokens,
+      games,
       referralSnapshot,
       revalidateReferralSnapshot,
       updateTokenBalance,

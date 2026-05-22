@@ -99,11 +99,17 @@ export async function getAccessToken(): Promise<string | null> {
   return session?.access_token ?? null
 }
 
-// POST /api/tokens/spend
-export async function spendTokens(token: string, amount: number) {
+export interface SpendTokensResult {
+  balance: number
+  tokensSpent: number
+  gameId: string
+}
+
+// POST /api/tokens/spend — cost resolved server-side from game_config
+export async function spendTokens(token: string, gameId: string): Promise<SpendTokensResult> {
   const res = await authedFetch('/api/tokens/spend', token, {
     method: 'POST',
-    body: JSON.stringify({ amount }),
+    body: JSON.stringify({ game_id: gameId }),
   })
   if (!res.ok) throw new Error('Failed to spend tokens')
   return res.json()
