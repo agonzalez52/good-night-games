@@ -188,7 +188,7 @@ interface ReferralModalProps {
 
 export function ReferralModal({ onClose, currentUser }: ReferralModalProps) {
   const { referralSnapshot, revalidateReferralSnapshot } = useAuth()
-  const { signupBonusTokens } = useProductConfig()
+  const { signupBonusTokens, referralTokens, maxReferrals: configMaxReferrals } = useProductConfig()
   const [copied, setCopied] = useState(false)
   const [fallbackReferral, setFallbackReferral] = useState<ReferralDataResponse | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -244,7 +244,9 @@ export function ReferralModal({ onClose, currentUser }: ReferralModalProps) {
   }, [referralWarmKey, currentUser.id, revalidateReferralSnapshot])
 
   const claimed = referral?.claimed ?? currentUser.referralsClaimed ?? 0
-  const maxReferrals = referral?.max ?? 3
+  const maxReferrals = referral?.max ?? configMaxReferrals
+  const referralTokenLabel = `${referralTokens} token${referralTokens === 1 ? '' : 's'}`
+  const inviteFriendLabel = `friend${configMaxReferrals === 1 ? '' : 's'}`
   const referralCode = referral?.referralCode ?? ''
   const referralLink =
     typeof window !== 'undefined' && referralCode
@@ -273,7 +275,7 @@ export function ReferralModal({ onClose, currentUser }: ReferralModalProps) {
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 10, letterSpacing: '0.16em', color: 'var(--text-faint)', textTransform: 'uppercase', marginBottom: 10 }}>How It Works</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[
-              { n: '1', text: <span>Invite up to 3 friends <strong style={{ color: 'var(--text)', fontWeight: 600 }}>using your unique link</strong> — direct signups won&apos;t count</span> },
+              { n: '1', text: <span>Invite up to {configMaxReferrals} {inviteFriendLabel} <strong style={{ color: 'var(--text)', fontWeight: 600 }}>using your unique link</strong> — direct signups won&apos;t count</span> },
               { n: '2', text: <span>Each friend must <strong style={{ color: 'var(--text)', fontWeight: 600 }}>claim their {signupBonusTokens} free signup tokens</strong></span> },
             ].map(({ n, text }) => (
               <div key={n} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -283,7 +285,7 @@ export function ReferralModal({ onClose, currentUser }: ReferralModalProps) {
             ))}
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55, marginTop: 2 }}>
               You and your friend will then automatically receive{' '}
-              <span style={{ color: '#0FD98A', fontWeight: 600 }}>2 tokens</span> per successful referral
+              <span style={{ color: '#0FD98A', fontWeight: 600 }}>{referralTokenLabel}</span> per successful referral
             </div>
           </div>
         </div>

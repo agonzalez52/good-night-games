@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  DEFAULT_MAX_REFERRALS,
+  DEFAULT_REFERRAL_TOKENS,
   DEFAULT_TOKENS_PER_GAME,
   SURVEY_SHOWDOWN_GAME_ID,
   getGameConfig,
@@ -83,6 +85,8 @@ describe('getProductConfig', () => {
         ok: true,
         json: async () => ({
           signupBonusTokens: 7,
+          referralTokens: 5,
+          maxReferrals: 10,
           games: {
             survey_showdown: {
               name: 'Survey Showdown',
@@ -98,6 +102,8 @@ describe('getProductConfig', () => {
     const config = await loadConfig()
 
     expect(config.signupBonusTokens).toBe(7)
+    expect(config.referralTokens).toBe(5)
+    expect(config.maxReferrals).toBe(10)
     expect(config.games.survey_showdown).toEqual({
       name: 'Survey Showdown',
       tokensPerGame: 2,
@@ -116,6 +122,8 @@ describe('getProductConfig', () => {
     const config = await loadConfig()
 
     expect(config.signupBonusTokens).toBe(4)
+    expect(config.referralTokens).toBe(DEFAULT_REFERRAL_TOKENS)
+    expect(config.maxReferrals).toBe(DEFAULT_MAX_REFERRALS)
     expect(config.games).toEqual({})
     expect(getTokensPerGame(config.games, SURVEY_SHOWDOWN_GAME_ID)).toBe(
       DEFAULT_TOKENS_PER_GAME,
@@ -145,5 +153,26 @@ describe('getProductConfig', () => {
     const config = await loadConfig()
 
     expect(Object.keys(config.games)).toEqual(['survey_showdown'])
+  })
+
+  it('defaults referral config when fields are missing or invalid', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          signupBonusTokens: 4,
+          referralTokens: 0,
+          maxReferrals: -1,
+          games: {},
+        }),
+      }),
+    )
+
+    const { getProductConfig: loadConfig } = await import('./config')
+    const config = await loadConfig()
+
+    expect(config.referralTokens).toBe(DEFAULT_REFERRAL_TOKENS)
+    expect(config.maxReferrals).toBe(DEFAULT_MAX_REFERRALS)
   })
 })

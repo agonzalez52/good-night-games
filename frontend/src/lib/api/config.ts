@@ -3,6 +3,12 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:300
 /** Matches backend default when SIGNUP_BONUS_TOKENS is unset. */
 export const DEFAULT_SIGNUP_BONUS_TOKENS = 4
 
+/** Matches backend default when REFERRAL_TOKENS is unset. */
+export const DEFAULT_REFERRAL_TOKENS = 2
+
+/** Matches backend default when MAX_REFERRALS is unset. */
+export const DEFAULT_MAX_REFERRALS = 3
+
 /** Fallback when game config is not yet loaded or missing from GET /api/config. */
 export const DEFAULT_TOKENS_PER_GAME = 2
 
@@ -16,6 +22,8 @@ export interface GameConfigPayload {
 
 export interface ProductConfig {
   signupBonusTokens: number
+  referralTokens: number
+  maxReferrals: number
   games: Record<string, GameConfigPayload>
 }
 
@@ -47,18 +55,25 @@ function parseGames(raw: unknown): Record<string, GameConfigPayload> {
   return games
 }
 
+function parsePositiveInt(raw: unknown, fallback: number): number {
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback
+}
+
 function parseProductConfig(raw: unknown): ProductConfig {
   if (!raw || typeof raw !== 'object') {
     return {
       signupBonusTokens: DEFAULT_SIGNUP_BONUS_TOKENS,
+      referralTokens: DEFAULT_REFERRAL_TOKENS,
+      maxReferrals: DEFAULT_MAX_REFERRALS,
       games: {},
     }
   }
   const o = raw as Record<string, unknown>
-  const n = Number(o.signupBonusTokens)
   return {
-    signupBonusTokens:
-      Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_SIGNUP_BONUS_TOKENS,
+    signupBonusTokens: parsePositiveInt(o.signupBonusTokens, DEFAULT_SIGNUP_BONUS_TOKENS),
+    referralTokens: parsePositiveInt(o.referralTokens, DEFAULT_REFERRAL_TOKENS),
+    maxReferrals: parsePositiveInt(o.maxReferrals, DEFAULT_MAX_REFERRALS),
     games: parseGames(o.games),
   }
 }
@@ -100,6 +115,8 @@ export async function getProductConfig(): Promise<ProductConfig> {
     } catch {
       return {
         signupBonusTokens: DEFAULT_SIGNUP_BONUS_TOKENS,
+        referralTokens: DEFAULT_REFERRAL_TOKENS,
+        maxReferrals: DEFAULT_MAX_REFERRALS,
         games: {},
       }
     } finally {

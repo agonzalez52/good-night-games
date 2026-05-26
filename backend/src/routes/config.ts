@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { getSignupBonusTokens } from '../lib/config'
+import { getMaxReferrals, getReferralTokens, getSignupBonusTokens } from '../lib/config'
 import { prisma } from '../lib/prisma'
 
 export interface GameConfigPayload {
@@ -10,6 +10,8 @@ export interface GameConfigPayload {
 
 export interface ProductConfigResponse {
   signupBonusTokens: number
+  referralTokens: number
+  maxReferrals: number
   games: Record<string, GameConfigPayload>
 }
 
@@ -44,6 +46,8 @@ config.get('/', async (c) => {
     })
     return c.json({
       signupBonusTokens: getSignupBonusTokens(),
+      referralTokens: getReferralTokens(),
+      maxReferrals: getMaxReferrals(),
       games: mapGameConfigRows(rows),
     } satisfies ProductConfigResponse)
   } catch (error) {
