@@ -117,9 +117,10 @@ describe('GET /api/config', () => {
 
     const res = await app.request('/api/config')
     expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.referralTokens).toBe(2)
-    expect(body.maxReferrals).toBe(3)
+    expect(await res.json()).toMatchObject({
+      referralTokens: 2,
+      maxReferrals: 3,
+    })
     expect(getReferralTokens()).toBe(2)
     expect(getMaxReferrals()).toBe(3)
   })

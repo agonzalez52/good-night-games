@@ -230,7 +230,6 @@ describe('GET /api/referrals', () => {
     const app = makeApp()
     const res = await app.request('/api/referrals')
     expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.max).toBe(3)
+    await expect(res.json()).resolves.toMatchObject({ max: 3 })
   })
 })
