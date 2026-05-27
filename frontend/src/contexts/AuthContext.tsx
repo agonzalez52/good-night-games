@@ -20,6 +20,8 @@ import {
   type ReferralDataResponse,
 } from '@/lib/api/referrals'
 import {
+  DEFAULT_MAX_REFERRALS,
+  DEFAULT_REFERRAL_TOKENS,
   DEFAULT_SIGNUP_BONUS_TOKENS,
   getProductConfig,
   type GameConfigPayload,
@@ -55,6 +57,10 @@ export type AuthContextValue = {
   loading: boolean
   /** From GET /api/config; defaults to 4 until fetch completes or on failure. */
   signupBonusTokens: number
+  /** From GET /api/config; defaults to 2 until fetch completes or on failure. */
+  referralTokens: number
+  /** From GET /api/config; defaults to 3 until fetch completes or on failure. */
+  maxReferrals: number
   /** Per-game economy/metadata from GET /api/config; empty until fetch completes. */
   games: Record<string, GameConfigPayload>
   /** GET /api/referrals snapshot for `currentUser.id`; null if missing or user switched. */
@@ -121,6 +127,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [signupBonusTokens, setSignupBonusTokens] = useState(DEFAULT_SIGNUP_BONUS_TOKENS)
+  const [referralTokens, setReferralTokens] = useState(DEFAULT_REFERRAL_TOKENS)
+  const [maxReferrals, setMaxReferrals] = useState(DEFAULT_MAX_REFERRALS)
   const [games, setGames] = useState<Record<string, GameConfigPayload>>({})
   const [referralCache, setReferralCache] = useState<{
     userId: string
@@ -209,6 +217,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void getProductConfig().then(config => {
       if (!cancelled) {
         setSignupBonusTokens(config.signupBonusTokens)
+        setReferralTokens(config.referralTokens)
+        setMaxReferrals(config.maxReferrals)
         setGames(config.games)
       }
     })
@@ -381,6 +391,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentUser,
       loading,
       signupBonusTokens,
+      referralTokens,
+      maxReferrals,
       games,
       referralSnapshot,
       revalidateReferralSnapshot,
@@ -394,6 +406,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentUser,
       loading,
       signupBonusTokens,
+      referralTokens,
+      maxReferrals,
       games,
       referralSnapshot,
       revalidateReferralSnapshot,

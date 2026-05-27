@@ -10,7 +10,7 @@ import {
 
 /** Product-level config from GET /api/config (loaded in AuthProvider). */
 export function useProductConfig() {
-  const { signupBonusTokens, games } = useAuth()
+  const { signupBonusTokens, referralTokens, maxReferrals, games } = useAuth()
 
   const getGame = useCallback(
     (gameId: string): GameConfigPayload | null => getGameConfig(games, gameId),
@@ -30,6 +30,8 @@ export function useProductConfig() {
 
   return {
     signupBonusTokens,
+    referralTokens,
+    maxReferrals,
     games,
     getGame,
     getTokensPerGame: getTokensPerGameFor,

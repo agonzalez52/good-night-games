@@ -1,10 +1,8 @@
 import { Hono } from 'hono'
 import { ReferralStatus } from '@prisma/client'
 import { requireAuth, AuthVariables } from '../middleware/auth'
+import { getMaxReferrals, getReferralTokens } from '../lib/config'
 import { prisma } from '../lib/prisma'
-
-const MAX_REFERRALS = 3
-const REFERRAL_TOKENS = 2
 /** Synthetic bundle id for analytics — parallel to `email_verification_bonus` in auth routes. */
 const REFERRAL_CLAIM_BUNDLE_ID = 'referral_claim_bonus'
 
@@ -36,7 +34,7 @@ referrals.get('/', async (c) => {
       referralCode: user.referral_code,
       claimed,
       pending,
-      max: MAX_REFERRALS,
+      max: getMaxReferrals(),
     })
   } catch (error) {
     console.error('GET /api/referrals error:', error)
@@ -65,7 +63,7 @@ referrals.post('/claim', async (c) => {
       where: { referrer_id: referral.referrer_id, status: ReferralStatus.CLAIMED },
     })
 
-    if (claimedCount >= MAX_REFERRALS) {
+    if (claimedCount >= getMaxReferrals()) {
       const balance = await getUserTokenBalance(userId)
       return c.json({ success: true, referralClaimed: false, balance })
     }
@@ -95,13 +93,13 @@ referrals.post('/claim', async (c) => {
       await tx.user_tokens.upsert({
         where: { user_id: referral.referrer_id },
         update: {
-          balance: { increment: REFERRAL_TOKENS },
-          lifetime_purchased: { increment: REFERRAL_TOKENS },
+          balance: { increment: getReferralTokens() },
+          lifetime_purchased: { increment: getReferralTokens() },
         },
         create: {
           user_id: referral.referrer_id,
-          balance: REFERRAL_TOKENS,
-          lifetime_purchased: REFERRAL_TOKENS,
+          balance: getReferralTokens(),
+          lifetime_purchased: getReferralTokens(),
           lifetime_spent: 0,
         },
       })
@@ -109,13 +107,13 @@ referrals.post('/claim', async (c) => {
       const referredTokens = await tx.user_tokens.upsert({
         where: { user_id: userId },
         update: {
-          balance: { increment: REFERRAL_TOKENS },
-          lifetime_purchased: { increment: REFERRAL_TOKENS },
+          balance: { increment: getReferralTokens() },
+          lifetime_purchased: { increment: getReferralTokens() },
         },
         create: {
           user_id: userId,
-          balance: REFERRAL_TOKENS,
-          lifetime_purchased: REFERRAL_TOKENS,
+          balance: getReferralTokens(),
+          lifetime_purchased: getReferralTokens(),
           lifetime_spent: 0,
         },
       })
@@ -126,7 +124,7 @@ referrals.post('/claim', async (c) => {
           stripe_checkout_session_id: `referral_claim:${referral.id}:referrer`,
           stripe_payment_intent_id: null,
           bundle_id: REFERRAL_CLAIM_BUNDLE_ID,
-          tokens_purchased: REFERRAL_TOKENS,
+          tokens_purchased: getReferralTokens(),
           amount_paid_cents: 0,
           status: 'COMPLETED',
         },
@@ -138,7 +136,7 @@ referrals.post('/claim', async (c) => {
           stripe_checkout_session_id: `referral_claim:${referral.id}:referred`,
           stripe_payment_intent_id: null,
           bundle_id: REFERRAL_CLAIM_BUNDLE_ID,
-          tokens_purchased: REFERRAL_TOKENS,
+          tokens_purchased: getReferralTokens(),
           amount_paid_cents: 0,
           status: 'COMPLETED',
         },

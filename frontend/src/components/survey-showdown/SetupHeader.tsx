@@ -406,10 +406,11 @@ export default function SetupHeader({
     return () => document.removeEventListener('mousedown', handle)
   }, [])
 
+  const { maxReferrals } = useProductConfig()
   const initials = currentUser?.username ? currentUser.username.slice(0, 2).toUpperCase() : '?'
   const balance = currentUser?.tokenBalance ?? 0
   const referralsClaimed = currentUser?.referralsClaimed || 0
-  const canOpenReferral = Boolean(currentUser?.emailVerified) && referralsClaimed < 3
+  const canOpenReferral = Boolean(currentUser?.emailVerified) && referralsClaimed < maxReferrals
   const zeroBal = currentUser && balance === 0
   /** Session is syncing (e.g. after sign-in) — hide logged-in/out chrome until /me + balance return */
   const headerPending = authLoading && !currentUser
@@ -440,12 +441,12 @@ export default function SetupHeader({
               </div>
               {canOpenReferral && (() => {
                 const claimed = referralsClaimed
-                const pct = Math.round((claimed / 3) * 100)
+                const pct = Math.round((claimed / maxReferrals) * 100)
                 return (
                   <button onClick={() => onOpenReferral()} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 100, background: 'rgba(15,217,138,0.06)', border: '1px solid rgba(15,217,138,0.25)', cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap', animation: claimed === 0 ? 'greenPulse 2.6s ease-in-out infinite' : 'none' }}>
                     {claimed > 0 && <div style={{ position: 'absolute', inset: 0, borderRadius: 100, background: 'rgba(15,217,138,0.18)', width: `${pct}%`, transition: 'width 0.5s ease' }} />}
                     <span style={{ position: 'relative', fontFamily: 'var(--font-display)', fontSize: 10, letterSpacing: '0.08em', color: '#0FD98A' }}>
-                      {claimed === 0 ? '✦ EARN FREE TOKENS' : `✦ ${claimed} / 3 REFERRALS`}
+                      {claimed === 0 ? '✦ EARN FREE TOKENS' : `✦ ${claimed} / ${maxReferrals} REFERRALS`}
                     </span>
                   </button>
                 )
