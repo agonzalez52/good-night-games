@@ -8,17 +8,22 @@ alwaysApply: true
 | Layer       | Tool                                       |
 |----|-----|
 | Language    | TypeScript                                 |
-| Frontend    | Next.js 14 (App Router), React, Tailwind   |
+| Frontend    | Next.js 16 (App Router), React 19, Tailwind CSS 4 |
 | Backend     | Hono, Node.js                              |
 | Database    | Supabase PostgreSQL                        |
-| Auth        | Supabase Auth (email/password, Google, magic link) |
+| Auth        | Supabase Auth (email/password, Google OAuth, magic link) |
 | ORM         | Prisma + Accelerate                        |
 | Validation  | Zod                                        |
-| Payments    | Stripe                                     |
+| Payments    | Stripe (Checkout, webhooks, token bundles)   |
 | AI Judge    | Claude Haiku (backend only — never frontend) |
-| Hosting     | Railway                                    |
+| Email       | Resend (signup verification, transactional) |
+| Bot defense | Cloudflare Turnstile (auth flows)          |
+| Ads         | Google AdSense (signed-out playthrough only) |
+| Hosting     | Vercel (frontend), Railway (backend API)   |
 | Testing     | Vitest                                     |
 | CI          | GitHub Actions                             |
+
+Frontend and backend `package.json` versions stay in sync (currently **0.13.0**).
 
 ---
 
@@ -26,15 +31,23 @@ alwaysApply: true
 The project lives in a single GitHub repository named good-night-games. Both the frontend and backend are subdirectories within it. This keeps all Good Night Games code in one place, allows shared TypeScript types between frontend and backend, and means one CI pipeline covers both sides.
 ```
 good-night-games/                  ← GitHub repo root
-├── frontend/                      ← Next.js app
-├── backend/                       ← Hono API server
-├── shared/                        ← TypeScript types shared by both sides (optional, add when needed)
-├── .github/
-│   └── workflows/
-│       └── ci.yml                 ← single CI file covering frontend and backend
+├── frontend/                      ← Next.js app (Survey Showdown UI)
+│   └── src/
+│       ├── app/                   ← App Router pages, globals.css (design tokens + animations)
+│       ├── components/            ← survey-showdown/, shared/
+│       ├── contexts/              ← AuthContext (session, config, referrals)
+│       ├── hooks/                 ← useAuth, useProductConfig, useTokenBalance
+│       └── lib/api/               ← typed API clients (JWT via Supabase session)
+├── backend/                       ← Hono API, Prisma schema, migrations
+│   ├── prisma/                    ← schema + SQL migrations
+│   ├── src/routes/                ← product + /api/survey-showdown/*
+│   └── docs/                      ← Supabase routines runbooks
+├── shared/                        ← Optional shared TypeScript types (add when needed)
+├── scripts/                       ← prepare-release.ps1 (semver + GitHub pre-releases)
+├── .github/workflows/ci.yml       ← backend tsc + Vitest on push/PR
 └── README.md
 ```
-Each subdirectory has its own package.json and dependencies installed independently. There is no root-level package.json — run npm install inside frontend/ or backend/ as needed. Railway is configured with its Root Directory set to backend/ so it treats that folder as if it were a standalone repo.
+Each subdirectory has its own `package.json` and dependencies installed independently. There is no root-level `package.json` — run `npm ci` inside `frontend/` or `backend/` as needed. Railway uses `backend/` as root directory; Vercel builds `frontend/`.
 
 ---
 
@@ -82,7 +95,7 @@ Each subdirectory has its own package.json and dependencies installed independen
 
 ### Animation Palette
 
-Named animations already defined in GLOBAL_CSS. Reuse these; do not invent new ones
+Named animations already defined in `frontend/src/app/globals.css`. Reuse these; do not invent new ones
 unless there is a clear gap:
 
 xPop, pulse, slideUp, slideDown, fadeIn, glow, blueGlow, timerPulse, menuSlide,
@@ -122,20 +135,20 @@ startGame(t1, t2, secs, nr)
   └── PREMIUM PACK + insufficient balance → show SpendConfirmModal (buy-more state)
 
 commitGame(t1, t2, secs, nr, usedTokens)
-  ├── Deducts TOKENS_PER_GAME (2) if usedTokens === true
-  ├── Handles token spend side effects for premium sessions
-  ├── Shuffles pack questions (playable question list for the session)
+  ├── Lazy-loads premium pack questions from API when needed
+  ├── POST /api/tokens/spend (game_id) if usedTokens === true — server validates balance
+  ├── Merges free + premium + custom surveys; shuffles playable question list
   └── setScreen("faceoff")
 ```
 
-Never bypass `startGame`. Never deduct tokens outside of `commitGame`.
+Never bypass `startGame`. Never deduct tokens outside of `commitGame` (and never client-side only — spend must hit the API).
 Always pass `usedTokens` as a boolean — never undefined.
 
 ### Token Rules
 
-- `TOKENS_PER_GAME = 2`
-- Free packs (Classic) NEVER cost tokens, even for signed-in users
-- Premium packs and Random Mix cost 2 tokens
+- Default `tokensPerGame` is **2** for Survey Showdown; live value comes from `game_config` via `GET /api/config` (`useProductConfig().surveyShowdownTokensPerGame`)
+- Free packs (`is_free: true`) NEVER cost tokens, even for signed-in users
+- Premium packs and Random Mix cost `tokensPerGame` tokens
 - Playthrough ads on FaceOff and Board are shown only for signed-out users
 - Signed-in users do not see playthrough ads once auth is resolved
 - Token balance lives on `currentUser.tokenBalance` — always update via `onTokensUpdated`
@@ -160,7 +173,7 @@ Always pass `usedTokens` as a boolean — never undefined.
 
 ### Namespace rules
 
-- Product-level (shared across all GNG games): `/api/auth/`, `/api/tokens/`, `/api/referrals/`, `/api/feedback`
+- Product-level (shared across all GNG games): `/api/config`, `/api/auth/`, `/api/tokens/`, `/api/tokens/bundles`, `/api/referrals/`, `/api/feedback`
 - Game-specific: `/api/survey-showdown/`
 - Future games: `/api/word-blitz/`, `/api/trivia-rush/`, etc.
 - NEVER put game-specific logic in product-level routes
@@ -173,11 +186,16 @@ Always pass `usedTokens` as a boolean — never undefined.
 
 ### Key endpoint behaviors
 
-- `POST /api/tokens/spend` — validates balance server-side before deducting; rejects if insufficient
-- `POST /api/survey-showdown/judge` — checks judge_cache first; calls Claude Haiku on miss; never exposes Anthropic key to frontend
+- `GET /api/config` — public product policy + per-game `tokensPerGame` from `game_config`
+- `POST /api/auth/*` — signup, email verification (Resend + Turnstile where applicable)
+- `POST /api/tokens/spend` — validates balance server-side before deducting; requires `game_id`; rejects if insufficient
+- `POST /api/tokens/webhook` — Stripe webhook (raw body; registered before JSON parsers)
+- `GET /api/survey-showdown/packs` — official pack catalog; premium question bodies via `GET .../packs/:id/questions`
+- `GET/POST/PUT/DELETE /api/survey-showdown/custom-surveys` — user surveys and collections (RLS + auth)
+- `POST /api/survey-showdown/judge` — checks `judge_cache` first; Claude Haiku on miss; never exposes Anthropic key to frontend
 - `POST /api/survey-showdown/history` — requires `game_id: "survey_showdown"` in request body; enforces 50-record rolling window
 - `POST /api/feedback` — requires `game_id` for per-game dashboard filtering
-- `DELETE /api/survey-showdown/surveys/collections/:id` — deletes collection only, not its surveys (surveys become uncategorized)
+- `DELETE /api/survey-showdown/custom-surveys/collections/:id` — deletes collection only; surveys become uncategorized (`collection_id` cleared)
 
 ### Zod validation
 
@@ -190,9 +208,10 @@ business logic. Return 400 with a structured error object on validation failure.
 
 ### Naming
 
-- Shared tables: `users`, `tokens`, `bundles`, `purchases`, `referrals`, `feedback`, `game_sessions`, `judge_cache`
-- Game-specific tables: prefixed with game name — `survey_packs`, `surveys`, `survey_collections`, `survey_showdown_results`
-- All new game tables must follow the same prefix convention
+- Shared tables: `users`, `user_tokens`, `token_bundles`, `purchases`, `referrals`, `feedback`, `game_sessions`, `game_config`, `judge_cache`, `product_policy`, `signup_verification_challenges`
+- Survey Showdown tables: **`su_` prefix** — `su_survey_packs`, `su_survey_questions`, `su_survey_answers`, `su_survey_pack_tags`, `su_custom_surveys`, `su_custom_survey_collections`, `su_survey_showdown_sessions`
+- All new game tables must use the same game-specific prefix convention (`su_` for Survey Showdown)
+- Supabase SQL routines/triggers: canonical source `backend/docs/supabase-public-routines.sql`; follow `backend/docs/database-routines-workflow.md` when editing
 
 ### game_sessions table
 
@@ -205,10 +224,18 @@ filtering by game_id unless you intentionally want cross-game data.
 - Always use `prisma migrate dev --name <descriptive-name>` for new migrations
 - Never edit migration files after they've been applied
 - Staging and local share the same Supabase project — run migrations once to cover both
+- Production: `npx prisma migrate deploy` against `good-night-games-production`
+- When changing `MAX_REFERRALS` in backend env, also update `product_policy.max_referrals` in the database
 
 ---
 
 ## Frontend Component Conventions
+
+### Entry point
+
+- Route: `/survey-showdown` → `SurveyShowdownApp.tsx` (orchestrates screens, modals, `startGame` / `commitGame`)
+- Auth/session: `AuthContext` + `useAuth`; API calls attach Supabase JWT from `createClient().auth.getSession()`
+- Do not reintroduce a monolithic prototype file — keep screen components split under `components/survey-showdown/`
 
 ### Modal pattern
 
@@ -250,11 +277,15 @@ textTransform: "uppercase"
 
 ### Three environments
 
-| Environment | Supabase Project            | Stripe Keys  |
-|----|----|-----|
-| Local       | good-night-games-staging   | sk_test_...  |
-| Staging     | good-night-games-staging   | sk_test_...  |
-| Production  | good-night-games-production | sk_live_... |
+| Environment | Supabase Project            | Stripe Keys  | Deploy targets |
+|----|----|-----|----------------|
+| Local       | good-night-games-staging   | sk_test_...  | localhost:3000 / :3001 |
+| Staging     | good-night-games-staging   | sk_test_...  | Vercel preview + Railway staging |
+| Production  | good-night-games-production | sk_live_... | Vercel + Railway (alpha releases today) |
+
+**Staging safeguards:** backend `staging-origin-guard` (`FRONTEND_URL`, `ALLOWED_ORIGINS`, `STAGING_ENFORCE_ORIGIN`); optional frontend Basic auth via `STAGING_PASSWORD` in `frontend/src/proxy.ts`.
+
+Key env files: `backend/.env.example`, `frontend/.env.example` (AdSense, Turnstile, Stripe publishable key, `NEXT_PUBLIC_BACKEND_URL`).
 
 ### NEXT_PUBLIC_MOCK_MODE
 
@@ -265,14 +296,13 @@ const isMockMode = process.env.NEXT_PUBLIC_MOCK_MODE === 'true';
 {isMockMode && <button onClick={handleSimulate}>🧪 Simulate...</button>}
 ```
 
-Present in `.env.local` and Railway staging. Intentionally absent from Railway
-production — Next.js compiles these branches out at build time.
+Present in `frontend/.env.local` and staging Vercel. Intentionally absent from
+production Vercel builds — Next.js compiles these branches out at build time.
 
 Mock elements that must be gated (complete list):
 - "🧪 SIMULATE EMAIL LINK CLICK" (AuthModal — verify state)
 - "🧪 SIMULATE EMAIL LINK CLICK" (AuthModal — magic-sent state)
-- "🧪 Simulate a friend claiming their tokens" (ReferralModal)
-- "MOCK VERIFY" (VerificationBanner)
+- "MOCK VERIFY" (SetupHeader — email verification banner shortcut)
 
 ---
 
@@ -297,29 +327,37 @@ Mock elements that must be gated (complete list):
 - Never log personally identifiable information (PII) to console in any environment
 - Never expose service role keys, stripe secret keys, or Anthropic API keys to the client
 - User emails are only shown in UI elements the owner can see (account dropdown, verify banner)
-- Referral simulate buttons are dev-only — see mock mode section above
+- Mock/simulate auth shortcuts are dev-only — see mock mode section above
 
 ---
 
-## Phase Awareness
+## Release Status & Phase Awareness
 
-The project follows a phased implementation plan. Always be aware of the current
-phase before suggesting changes:
+**Current state (May 2026):** Survey Showdown is **live in production** on Vercel + Railway, shipped through **GitHub alpha pre-releases** (`scripts/prepare-release.ps1` with `-PreRelease alpha`). The first **beta** release is the next milestone; expect ongoing architecture and UX tweaks until then.
 
 | Phase | Status | Deliverable |
 |----|-----|----|
-| 1–3   | ✅ Done | Full frontend UI in SurveyShowdown.jsx |
-| 4     | ⬜ Next | Backend scaffold + Prisma schema |
-| 5     | ⬜      | All API endpoints |
-| 6     | ⬜      | Next.js scaffold + real Supabase auth |
-| 7     | ⬜      | Stripe integration |
-| 8     | ⬜      | AI judge on backend |
-| 9     | ⬜      | Referrals, feedback, history wired |
-| 10    | ⬜      | Production deploy on Railway |
+| 1–3   | ✅ Done | Original prototype UI (migrated to TypeScript components) |
+| 4     | ✅ Done | Backend scaffold + Prisma schema |
+| 5     | ✅ Done | Product + Survey Showdown API endpoints |
+| 6     | ✅ Done | Next.js App Router + real Supabase auth (`AuthContext`, `/auth/callback`) |
+| 7     | ✅ Done | Stripe token bundles + webhook |
+| 8     | ✅ Done | AI judge on backend (`judge_cache`, Haiku pipeline) |
+| 9     | ✅ Done | Referrals, feedback, history, custom surveys wired |
+| 10    | ✅ Done (alpha) | Production deploy (Vercel frontend, Railway API, Supabase production DB) |
+| Beta  | ⬜ Next | First public beta release; stabilize APIs and polish |
 
-**Do not suggest Phase 6+ integrations (real Supabase calls, Stripe, backend fetches)
-while the project is still in Phases 4–5.** Mock data and TODO comments are correct
-and intentional in the frontend until Phase 6.
+### Release workflow
+
+- Branch from `develop`; cut releases with `pwsh scripts/prepare-release.ps1 -Bump <patch|minor|major> [-PreRelease alpha|beta]`
+- Agent guidance: `.cursor/skills/prepare-release/SKILL.md`
+- Do not merge release PRs unless explicitly asked
+
+### Guidance for changes during alpha
+
+- **Prefer real API + Supabase paths** — mock-only flows are dev exceptions (`NEXT_PUBLIC_MOCK_MODE`), not the default product path
+- **Expect churn** — schema, judge contract, pack loading, and auth edge cases may still change before beta; keep migrations backward-safe and update tests when behavior shifts
+- **Do not regress** token spend (`commitGame` → `POST /api/tokens/spend`), JWT validation, RLS, or secret handling for convenience
 
 ---
 
@@ -332,6 +370,8 @@ and intentional in the frontend until Phase 6.
 5. **Wrong fonts** — only Exo 2, Bebas Neue, and DM Sans
 6. **Mock buttons without NEXT_PUBLIC_MOCK_MODE guard** — all simulate/mock buttons must be gated
 7. **Missing game_id** — every history write and judge cache entry requires game_id
-8. **Querying surveys without RLS** — always filter by user_id; never return other users' surveys
-9. **Deleting collection with surveys** — collections delete independently; surveys become uncategorized
+8. **Querying surveys without RLS** — always filter by `user_id`; never return other users' custom surveys
+9. **Deleting collection with surveys** — `DELETE .../custom-surveys/collections/:id` uncategorizes surveys only
 10. **Adding IP-adjacent survey content** — all content must be wholly original
+11. **Hardcoding tokens per game** — use `useProductConfig()` / `GET /api/config`, not a local magic `2` (except documented defaults before config loads)
+12. **Bypassing server spend** — never decrement `tokenBalance` locally for premium games without a successful `/api/tokens/spend`
