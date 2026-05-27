@@ -20,6 +20,7 @@ import {
 } from '@/lib/api/survey-showdown/survey-packs'
 import { getGameHistory, saveGameHistory } from '@/lib/api/survey-showdown/history'
 import { spendTokens } from '@/lib/api/tokens'
+import { useProductConfig } from '@/hooks/useProductConfig'
 import {
   createCustomCollection,
   createCustomSurvey,
@@ -32,7 +33,7 @@ import {
   type UpsertCustomSurveyInput,
 } from '@/lib/api/survey-showdown/custom-surveys'
 import {
-  TOKENS_PER_GAME, resolvePackQuestions,
+  resolvePackQuestions,
   shuffleArray, playCoinCollect,
   reconcileSurveyRoundQuestions,
 } from '@/lib/constants'
@@ -58,6 +59,7 @@ export default function SurveyShowdownApp() {
     signOut,
     setAuthUser,
   } = useAuth()
+  const { surveyShowdownTokensPerGame, surveyShowdownGameId } = useProductConfig()
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -464,7 +466,7 @@ export default function SurveyShowdownApp() {
           return
         }
         try {
-          const spendResult = await spendTokens(accessToken, TOKENS_PER_GAME) as { balance: number }
+          const spendResult = await spendTokens(accessToken, surveyShowdownGameId)
           handleTokensUpdated(spendResult.balance)
         } catch {
           setSpendConfirmError('Could not spend tokens. Check your balance and try again.')
@@ -669,11 +671,17 @@ export default function SurveyShowdownApp() {
         />
       )}
       {showPurchaseModal && (
-        <TokenPurchaseModal currentBalance={currentUser?.tokenBalance || 0} onClose={() => setShowPurchaseModal(false)} onPurchase={handlePurchase} />
+        <TokenPurchaseModal
+          currentBalance={currentUser?.tokenBalance || 0}
+          tokensPerGame={surveyShowdownTokensPerGame}
+          onClose={() => setShowPurchaseModal(false)}
+          onPurchase={handlePurchase}
+        />
       )}
       {pendingGame && (
         <SpendConfirmModal
           balance={currentUser?.tokenBalance || 0}
+          tokensPerGame={surveyShowdownTokensPerGame}
           onConfirm={() => commitGame(pendingGame.t1, pendingGame.t2, pendingGame.secs, pendingGame.nr, true)}
           onCancel={() => { setSpendConfirmError(null); setPendingGame(null) }}
           onBuyMore={() => { setSpendConfirmError(null); setPendingGame(null); setShowPurchaseModal(true) }}

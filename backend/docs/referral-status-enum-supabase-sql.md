@@ -12,7 +12,15 @@ The column `public.referrals.status` has type `"ReferralStatus"` (not plain `tex
 
 Any trigger or function that **inserts or compares** `referrals.status` must use the **enum type**, not a bare string that PostgreSQL treats as `unknown` in a way that fails or mismatches.
 
-### Inserts (e.g. `apply_pending_referral_for_user`)
+### Referrer cap on signup (`ensure_pending_referral_for_user`)
+
+Before inserting a `PENDING` row, the function counts **all** referrals for the referrer
+(`pending` + `claimed`) and compares to `product_policy.max_referrals` (default `3`,
+keep in sync with backend `MAX_REFERRALS`). No row is created when the referrer is at cap.
+
+Prisma migration: `20260522180000_referral_signup_cap`.
+
+### Inserts (e.g. `ensure_pending_referral_for_user`)
 
 **Before (TEXT column — worked with `'pending'`):**
 
@@ -64,7 +72,11 @@ where id = ...;
 
 ### Staging vs production
 
-Apply the **same** Prisma migrations (or equivalent `CREATE TYPE` + `ALTER COLUMN ... USING` + renames) on each Supabase project so the enum name and labels match. Then update your trigger functions in **SQL Editor** on each environment.
+Apply the **same** Prisma migrations (or equivalent `CREATE TYPE` + `ALTER COLUMN ... USING` + renames) on each Supabase project so the enum name and labels match.
+
+For trigger/function changes (including enum casts inside `ensure_pending_referral_for_user`), follow **[database-routines-workflow.md](./database-routines-workflow.md)** — edit [`supabase-public-routines.sql`](./supabase-public-routines.sql) first, mirror into a new Prisma migration, then `migrate deploy` on staging and production. Do not maintain divergent copies in the Supabase SQL Editor per environment.
+
+After each deploy, run the copy-paste **`pg_proc` / `pg_trigger` drift checks** in [database-routines-workflow.md § Post-deploy verification](./database-routines-workflow.md#post-deploy-verification-drift-checks) on that environment before smoke-testing referrals.
 
 ### If you see `invalid input value for enum "ReferralStatus"`
 

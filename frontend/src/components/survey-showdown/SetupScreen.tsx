@@ -13,7 +13,6 @@ import CustomSurveysModal from '@/components/survey-showdown/CustomSurveysModal'
 import AuthModal from '@/components/shared/AuthModal'
 import TokenSVG from '@/components/shared/TokenSVG'
 import { useProductConfig } from '@/hooks/useProductConfig'
-import { TOKENS_PER_GAME } from '@/lib/constants'
 import type { CurrentUser, CustomSurvey, CustomCollection, SurveyQuestion, GameHistoryRecord } from '@/lib/constants'
 import type { SurveyPackFreeListItem, SurveyPackPremiumListItem } from '@/lib/api/survey-showdown/survey-packs'
 
@@ -70,7 +69,7 @@ export default function SetupScreen({
   onSaveCollection, onDeleteCollection, onCloseSurveys,
   gameHistory,
 }: SetupScreenProps) {
-  const { signupBonusTokens } = useProductConfig()
+  const { signupBonusTokens, surveyShowdownTokensPerGame } = useProductConfig()
   const [team1, setTeam1] = useState('TEAM 1')
   const [team2, setTeam2] = useState('TEAM 2')
   const [timerSecs, setTimerSecs] = useState(5)
@@ -393,7 +392,7 @@ export default function SetupScreen({
             <span>▶ START GAME</span>
             {isPremium && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, opacity: 0.85, borderLeft: '1px solid rgba(255,255,255,0.3)', paddingLeft: 10, fontSize: 14 }}>
-                {TOKENS_PER_GAME} <TokenSVG size={15} />
+                {surveyShowdownTokensPerGame} <TokenSVG size={15} />
               </span>
             )}
           </button>
