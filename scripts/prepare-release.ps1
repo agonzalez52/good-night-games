@@ -72,15 +72,6 @@ function Get-PackageVersion {
     return [string]$pkg.version
 }
 
-function Set-PackageVersion {
-    param(
-        [string]$RepoRoot,
-        [string]$Version
-    )
-    Invoke-NpmVersion (Join-Path $RepoRoot 'frontend') $Version
-    Invoke-NpmVersion (Join-Path $RepoRoot 'backend') $Version
-}
-
 function Invoke-Git {
     param(
         [string]$RepoRoot,
@@ -115,7 +106,7 @@ Invoke-Git $repoRoot @('pull', 'origin', 'develop')
 Write-Host "Bumping $Bump version in frontend and backend..."
 Invoke-NpmVersion (Join-Path $repoRoot 'frontend') $Bump
 $baseVersion = Get-PackageVersion (Join-Path $repoRoot 'frontend/package.json')
-Set-PackageVersion $repoRoot "${baseVersion}${preReleaseSuffix}-rc0"
+Invoke-NpmVersion (Join-Path $repoRoot 'backend') $baseVersion
 
 $frontendVersion = Get-PackageVersion (Join-Path $repoRoot 'frontend/package.json')
 $backendVersion = Get-PackageVersion (Join-Path $repoRoot 'backend/package.json')
@@ -124,7 +115,7 @@ if ($frontendVersion -ne $backendVersion) {
 }
 
 $branchName = "release/${baseVersion}${preReleaseSuffix}"
-$releaseLabel = "v${baseVersion}${preReleaseSuffix}-rc0"
+$releaseLabel = "v${baseVersion}${preReleaseSuffix}"
 $prTitleToDevelop = "$releaseLabel -> develop"
 $prTitleToMain = "$releaseLabel -> main"
 
@@ -161,46 +152,52 @@ Invoke-Git $repoRoot @('push', '-u', 'origin', $branchName)
 
 Push-Location $repoRoot
 try {
-Write-Host "Opening pull requests..."
-$developPrUrl = gh pr create `
-    --base develop `
-    --head $branchName `
-    --title $prTitleToDevelop `
-    --body "Release preparation for $releaseLabel."
+    Write-Host "Opening pull requests..."
+    $developPrUrl = gh pr create `
+        --base develop `
+        --head $branchName `
+        --title $prTitleToDevelop `
+        --body "Release preparation for $releaseLabel."
 
-if ($LASTEXITCODE -ne 0) {
-    throw "gh pr create (develop) failed with exit code $LASTEXITCODE"
-}
+    if ($LASTEXITCODE -ne 0) {
+        throw "gh pr create (develop) failed with exit code $LASTEXITCODE"
+    }
 
-$mainPrUrl = gh pr create `
-    --base main `
-    --head $branchName `
-    --title $prTitleToMain `
-    --body "Release preparation for $releaseLabel."
+    $mainPrUrl = gh pr create `
+        --base main `
+        --head $branchName `
+        --title $prTitleToMain `
+        --body "Release preparation for $releaseLabel."
 
-if ($LASTEXITCODE -ne 0) {
-    throw "gh pr create (main) failed with exit code $LASTEXITCODE"
-}
+    if ($LASTEXITCODE -ne 0) {
+        throw "gh pr create (main) failed with exit code $LASTEXITCODE"
+    }
 
-Write-Host "Creating GitHub pre-release $releaseLabel..."
-$releaseUrl = gh release create $releaseLabel `
-    --target $branchName `
-    --title $releaseLabel `
-    --generate-notes `
-    --prerelease
+    Write-Host "Creating GitHub release $releaseLabel..."
+    $releaseArgs = @(
+        $releaseLabel,
+        '--target', $branchName,
+        '--title', $releaseLabel,
+        '--generate-notes'
+    )
+    if ($PreRelease) {
+        $releaseArgs += '--prerelease'
+    }
 
-if ($LASTEXITCODE -ne 0) {
-    throw "gh release create failed with exit code $LASTEXITCODE"
-}
+    $releaseUrl = gh release create @releaseArgs
 
-Write-Host ""
-Write-Host "Release prepared successfully."
-Write-Host "  Branch:       $branchName"
-Write-Host "  Version:      $frontendVersion"
-Write-Host "  Tag:          $releaseLabel"
-Write-Host "  PR (develop): $developPrUrl"
-Write-Host "  PR (main):    $mainPrUrl"
-Write-Host "  Release:      $releaseUrl"
+    if ($LASTEXITCODE -ne 0) {
+        throw "gh release create failed with exit code $LASTEXITCODE"
+    }
+
+    Write-Host ""
+    Write-Host "Release prepared successfully."
+    Write-Host "  Branch:       $branchName"
+    Write-Host "  Version:      $frontendVersion"
+    Write-Host "  Tag:          $releaseLabel"
+    Write-Host "  PR (develop): $developPrUrl"
+    Write-Host "  PR (main):    $mainPrUrl"
+    Write-Host "  Release:      $releaseUrl"
 }
 finally {
     Pop-Location

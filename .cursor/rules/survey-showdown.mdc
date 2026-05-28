@@ -43,7 +43,7 @@ good-night-games/                  ← GitHub repo root
 │   ├── src/routes/                ← product + /api/survey-showdown/*
 │   └── docs/                      ← Supabase routines runbooks
 ├── shared/                        ← Optional shared TypeScript types (add when needed)
-├── scripts/                       ← prepare-release.ps1 (semver + GitHub pre-releases)
+├── scripts/                       ← prepare-release.sh / .ps1 (semver + GitHub releases)
 ├── .github/workflows/ci.yml       ← backend tsc + Vitest on push/PR
 └── README.md
 ```
@@ -349,7 +349,7 @@ Mock elements that must be gated (complete list):
 
 ### Release workflow
 
-- Branch from `develop`; cut releases with `pwsh scripts/prepare-release.ps1 -Bump <patch|minor|major> [-PreRelease alpha|beta]`
+- Branch from `develop`; cut releases with `./scripts/prepare-release.sh --bump <patch|minor|major> [--pre-release alpha|beta]` (or the `.ps1` equivalent on Windows)
 - Agent guidance: `.cursor/skills/prepare-release/SKILL.md`
 - Do not merge release PRs unless explicitly asked
 

@@ -92,7 +92,7 @@ good-night-games/
 │   ├── src/           # Routes, middleware, lib
 │   └── docs/          # Database routines, Supabase SQL runbooks
 ├── shared/            # Optional shared TypeScript types (add when needed)
-├── scripts/           # Release automation (e.g. prepare-release.ps1)
+├── scripts/           # Release automation (prepare-release.sh / .ps1)
 ├── .github/workflows/ # CI pipeline
 └── .cursor/rules/     # Project conventions for AI-assisted development
 ```
@@ -260,7 +260,7 @@ On every push and pull request:
 
 **Staging safeguards:** origin guard middleware restricts API access to configured front-end origins; preview URLs can be listed in `ALLOWED_ORIGINS`.
 
-**Release process:** use `scripts/prepare-release.ps1` for semver bumps and release branches from `develop` (see `.cursor/skills/prepare-release/` for agent guidance).
+**Release process:** use `scripts/prepare-release.sh` (macOS/Linux) or `scripts/prepare-release.ps1` (Windows) for semver bumps and release branches from `develop` (see `.cursor/skills/prepare-release/` for agent guidance).
 
 Post-deploy for SQL routine changes: run drift-check queries documented in [database-routines-workflow.md](backend/docs/database-routines-workflow.md).
 

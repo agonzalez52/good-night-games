@@ -3,7 +3,7 @@ name: prepare-release
 description: >-
   Prepare a Good Night Games release from develop: bump frontend and backend
   versions, create release branch, commit, push, open PRs to develop and main,
-  and create a GitHub pre-release. Use when planning or cutting a release.
+  and create a GitHub release. Use when planning or cutting a release.
 disable-model-invocation: true
 ---
 
@@ -13,7 +13,7 @@ Run this workflow only in **Agent mode** with shell and network permissions.
 
 ## Before you start
 
-1. Confirm `git`, `npm`, and `gh` are available (`gh auth status` must succeed).
+1. Confirm `git`, `npm`, `gh`, and `node` are available (`gh auth status` must succeed).
 2. Confirm the working tree is clean (no uncommitted changes).
 3. Do **not** ask for release notes; the script uses `--generate-notes` on the GitHub release.
 
@@ -28,7 +28,25 @@ Do not proceed until bump type is confirmed.
 
 ## Run the script
 
-From the repository root:
+From the repository root. Prefer the shell script on macOS/Linux; use PowerShell on Windows when `pwsh` is available.
+
+**macOS / Linux (Terminal, zsh/bash):**
+
+```bash
+./scripts/prepare-release.sh --bump <major|minor|patch>
+```
+
+Add `--pre-release alpha` or `--pre-release beta` when the user chose a pre-release channel.
+
+Examples:
+
+```bash
+./scripts/prepare-release.sh --bump patch
+./scripts/prepare-release.sh --bump minor --pre-release alpha
+./scripts/prepare-release.sh --bump major --pre-release beta
+```
+
+**Windows (PowerShell):**
 
 ```powershell
 pwsh -NoProfile -File scripts/prepare-release.ps1 -Bump <major|minor|patch>
@@ -44,19 +62,21 @@ pwsh -NoProfile -File scripts/prepare-release.ps1 -Bump minor -PreRelease alpha
 pwsh -NoProfile -File scripts/prepare-release.ps1 -Bump major -PreRelease beta
 ```
 
+Both scripts implement the same workflow. If `pwsh` is missing on macOS, use `prepare-release.sh` (do not hand-roll the steps).
+
 ## Naming conventions (do not change)
 
 | Item | Stable | Alpha | Beta |
 |------|--------|-------|------|
 | Branch | `release/X.Y.Z` | `release/X.Y.Z-alpha` | `release/X.Y.Z-beta` |
-| `package.json` version | `X.Y.Z-rc0` | `X.Y.Z-alpha-rc0` | `X.Y.Z-beta-rc0` |
-| Commit message | `vX.Y.Z-rc0` | `vX.Y.Z-alpha-rc0` | `vX.Y.Z-beta-rc0` |
-| PR titles | `vX.Y.Z-rc0 -> develop/main` | `vX.Y.Z-alpha-rc0 -> develop/main` | `vX.Y.Z-beta-rc0 -> develop/main` |
-| GitHub release tag & title | `vX.Y.Z-rc0` | `vX.Y.Z-alpha-rc0` | `vX.Y.Z-beta-rc0` |
+| `package.json` version | `X.Y.Z` | `X.Y.Z` | `X.Y.Z` |
+| Commit message | `vX.Y.Z` | `vX.Y.Z-alpha` | `vX.Y.Z-beta` |
+| PR titles | `vX.Y.Z -> develop/main` | `vX.Y.Z-alpha -> develop/main` | `vX.Y.Z-beta -> develop/main` |
+| GitHub release tag & title | `vX.Y.Z` | `vX.Y.Z-alpha` | `vX.Y.Z-beta` |
 
-`X.Y.Z` is the semver after the requested bump, read from `frontend/package.json`.
+`X.Y.Z` is the semver after `npm version <bump> --no-git-tag-version` on `frontend/package.json`. Both `frontend/` and `backend/` get the same `X.Y.Z` (backend is synced to match frontend). Do **not** append `-rc0`, `-alpha-rc0`, or `-beta-rc0` to package versions or release labels.
 
-Both `frontend/` and `backend/` must end on the same version. The script enforces this.
+Alpha and beta GitHub releases are created with `--prerelease`. Stable releases are not marked pre-release.
 
 ## After the script
 
